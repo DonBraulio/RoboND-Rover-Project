@@ -1,6 +1,51 @@
 import numpy as np
 import cv2
 
+# Store here some camera parameters to avoid recalculation on every step
+class RoverCamera():
+    def __init__(self):
+        # Init vars with default shape
+        self.init_img_shape()
+
+    @property
+    def width(self):
+        return self.cols
+
+    @property
+    def height(self):
+        return self.rows
+
+    def init_img_shape(self, rows=160, cols=320):
+        self.rows = rows
+        self.cols = cols
+        src, dst = RoverCamera.rover_cam_to_map_coords(self.width, self.height)
+        self.perspective_M = cv2.getPerspectiveTransform(src, dst)
+        self.view_mask = cv2.warpPerspective(np.ones((self.rows, self.cols)),
+                                             self.perspective_M,
+                                             (self.width, self.height))
+
+    def set_img_shape(self, rows, cols):
+        if rows != self.rows or cols != self.cols:
+            self.init_img_shape(rows, cols)
+
+    @staticmethod
+    def rover_cam_to_map_coords(dst_width, dst_height):
+        # Get source and destination squares to transform image from rover camera
+        # perspective, to a map view perspective.
+        dst_size = 5
+        bottom_offset = 6
+        source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
+        destination = np.float32([
+                [dst_width/2 - dst_size, dst_height - bottom_offset],
+                [dst_width/2 + dst_size, dst_height - bottom_offset],
+                [dst_width/2 + dst_size, dst_height - 2*dst_size - bottom_offset],
+                [dst_width/2 - dst_size, dst_height - 2*dst_size - bottom_offset],
+                ])
+        return source, destination
+
+
+RoverCam = RoverCamera()
+
 # Identify pixels above the threshold
 # Threshold of RGB > 160 does a nice job of identifying ground pixels only
 def color_thresh(img, rgb_thresh=(160, 160, 160)):
@@ -83,32 +128,15 @@ def pix_to_world(xpix, ypix, xpos, ypos, yaw, world_size, scale):
     return x_pix_world, y_pix_world
 
 # Define a function to perform a perspective transform
-def perspect_transform(img, src, dst):
-           
-    M = cv2.getPerspectiveTransform(src, dst)
-    warped = cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]))# keep same size as input image
-    
-    return warped
-
-def rover_cam_to_map_view_coords(dst_img):
-    # Get source and destination squares to transform image from rover camera
-    # perspective, to a map view perspective.
-    dst_size = 5
-    bottom_offset = 6
-    source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
-    destination = np.float32([
-            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - bottom_offset],
-            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - bottom_offset],
-            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
-            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
-            ])
-    return source, destination
+def perspect_transform(img, M):
+    return cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]))
 
 # Apply the above functions in succession and update the Rover state accordingly
 def perception_step(Rover):
+        # Set camera size (will update transform params only on change)
+    RoverCam.set_img_shape(Rover.img.shape[0], Rover.img.shape[1])
         # Warp camera to map-view
-    source, destination = rover_cam_to_map_view_coords(Rover.img)
-    warped = perspect_transform(Rover.img, source, destination)
+    warped = perspect_transform(Rover.img, RoverCam.perspective_M)
         # Apply thresholds to detect navigable map and rocks first
     nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150))
     rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
