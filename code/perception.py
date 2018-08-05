@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-# Store here some camera parameters to avoid recalculation on every step
+# Store camera perspective matrix and view_mask to avoid recalculation on every step
 class RoverCamera():
     def __init__(self):
         # Init vars with default shape
@@ -9,7 +9,7 @@ class RoverCamera():
 
     @property
     def width(self):
-        return self.cols
+        return self.columns
 
     @property
     def height(self):
@@ -17,16 +17,32 @@ class RoverCamera():
 
     def init_img_shape(self, rows=160, cols=320):
         self.rows = rows
-        self.cols = cols
+        self.columns = cols
         src, dst = RoverCamera.rover_cam_to_map_coords(self.width, self.height)
         self.perspective_M = cv2.getPerspectiveTransform(src, dst)
-        self.view_mask = cv2.warpPerspective(np.ones((self.rows, self.cols)),
-                                             self.perspective_M,
-                                             (self.width, self.height))
+        # filters by distance to camera and angle
+        self.x_camera = self.width/2
+        self.y_camera = self.height
+        self.max_view_distance = 100
+        self.view_mask = self.calculate_view_mask()
 
     def set_img_shape(self, rows, cols):
-        if rows != self.rows or cols != self.cols:
+        if rows != self.rows or cols != self.columns:
             self.init_img_shape(rows, cols)
+
+    # Get a mask of the valid image range, filtering by vision angle and distance to camera
+    def calculate_view_mask(self):
+        # transform the whole image to get valid angle of vision
+        view_mask = cv2.warpPerspective(np.ones((self.rows, self.columns)),
+                                        self.perspective_M,
+                                        (self.width, self.height))
+        # mask by distance to the camera point
+        xview, yview = view_mask.nonzero()
+        distances_to_camera = np.sqrt((xview - self.x_camera)**2 + (yview - self.y_camera)**2)
+        away_mask = distances_to_camera > self.max_view_distance
+        # filter by distance mask
+        view_mask[xview[away_mask], yview[away_mask]] = 0
+        return view_mask
 
     @staticmethod
     def rover_cam_to_map_coords(dst_width, dst_height):
@@ -140,9 +156,11 @@ def perception_step(Rover):
         # Apply thresholds to detect navigable map and rocks first
     nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150))
     rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
-    Rover.vision_image[:,:,0] = 255*nav_thres
+    obstacles = np.abs(1 - nav_thres)*RoverCam.view_mask  # opossite to navigable terrain
+
+    Rover.vision_image[:,:,0] = 255*obstacles
+    Rover.vision_image[:,:,2] = 255*nav_thres
     Rover.vision_image[:,:,1] = 255*rock_range
-    Rover.vision_image[:,:,2] = 0
 
         # Calculate navigable pixel values in rover-centric coords
     xpix_rov, ypix_rov = rover_coords(nav_thres)
@@ -156,6 +174,15 @@ def perception_step(Rover):
                                       scale)
     Rover.worldmap[ypix_nav, xpix_nav, 2] += 1
 
+        # Repeat the transformation to show obstacles on the map
+    xpix_obs_rov, ypix_obs_rov = rover_coords(obstacles)
+    xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
+					Rover.pos[0], Rover.pos[1],
+					Rover.yaw,
+					Rover.worldmap.shape[0],
+                                        scale)
+    Rover.worldmap[ypix_obs, xpix_obs, 0] += 1
+
         # Repeat the procedure to show rocks on the map
     xpix_rock_rov, ypix_rock_rov = rover_coords(rock_range)
     xpix_rock, ypix_rock = pix_to_world(xpix_rock_rov, ypix_rock_rov,
@@ -163,7 +190,7 @@ def perception_step(Rover):
 					Rover.yaw,
 					Rover.worldmap.shape[0],
                                         scale)
-    Rover.worldmap[ypix_rock, xpix_rock, 0] = 255
+    Rover.worldmap[ypix_rock, xpix_rock, 1] += 1
 
     Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
 
