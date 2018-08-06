@@ -1,6 +1,8 @@
 import numpy as np
 
-
+steering_counter = 0
+seen_rock_counter = 5
+last_seen_rock = 0
 # This is where you can build a decision tree for determining throttle, brake and steer 
 # commands based on the output of the perception_step() function
 def decision_step(Rover):
@@ -20,8 +22,7 @@ def decision_step(Rover):
         else:
             print("Steering to find rock")
             Rover.brake = 0
-            Rover.steer = -15
-        return np.abs(Rover.steer)
+            Rover.steer = 15 if last_seen_rock >= 0 else -15
 
     # Example:
     # Check if we have vision data to make decisions with
@@ -34,7 +35,7 @@ def decision_step(Rover):
             Rover.brake = Rover.brake_set
             # Define state for after picking up
             if Rover.vel:
-                Rover.total_steer = 0
+                steering_counter = 0
                 Rover.mode = Rover.S_SAW_ROCK  # Still moving, we might lose the rock
             else:
                 Rover.mode = Rover.S_STOP  # Not moving, we'll pick rock and continue as S_STOP
@@ -42,10 +43,12 @@ def decision_step(Rover):
         elif Rover.mode == Rover.S_APPROACH_ROCK:
 
             print("Found the ROCK! Approaching...")
-            # We lost the rock, stop and find it
+            # We lost the rock for 5 consecutive frames, stop and find it
             if not Rover.seeing_rock:
-                Rover.total_steer = 0
-                Rover.mode = Rover.S_SAW_ROCK
+                seen_rock_counter -= 1
+                if seen_rock_counter <= 0:
+                    steering_counter = 0
+                    Rover.mode = Rover.S_SAW_ROCK
 
             # Seeing rock: head towards the rock with speed inversely proportional to distance
             else:
@@ -60,13 +63,16 @@ def decision_step(Rover):
                 else:  # Go loosely
                     Rover.brake = 0
                     Rover.throttle = 0
-                Rover.steer = steer_mean_angle(Rover.nav_angles)
-        elif Rover.mode == Rover.S_SAW_ROCK:  # Reset total_steer before entering here
+                last_seen_rock = steer_mean_angle(Rover.nav_angles)
+                seen_rock_counter = 5
+                Rover.steer = last_seen_rock
+        elif Rover.mode == Rover.S_SAW_ROCK:  # Reset steering_counter before entering here
             print("We lost the rock, find it now!!!")
-            Rover.total_steer += steer_to_find_rock()
+            steer_to_find_rock()
+            steering_counter += 1
             if Rover.seeing_rock:
                 Rover.mode = Rover.S_APPROACH_ROCK
-            elif np.abs(Rover.total_steer) >= 360:
+            elif steering_counter > 30:  # steering limit
                 Rover.mode = Rover.S_STOP
             
         # Check for Rover.mode status
