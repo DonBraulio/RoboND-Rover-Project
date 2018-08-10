@@ -1,67 +1,6 @@
 import numpy as np
 import cv2
 
-# Store camera perspective matrix and view_mask to avoid recalculation on every step
-class RoverCamera():
-    def __init__(self):
-        # Init vars with default shape
-        self.init_img_shape()
-
-    @property
-    def width(self):
-        return self.columns
-
-    @property
-    def height(self):
-        return self.rows
-
-    def init_img_shape(self, rows=160, cols=320):
-        self.rows = rows
-        self.columns = cols
-        src, dst = RoverCamera.rover_cam_to_map_coords(self.width, self.height)
-        self.perspective_M = cv2.getPerspectiveTransform(src, dst)
-        # filters by distance to camera and angle
-        self.x_camera = self.width/2
-        self.y_camera = self.height
-        self.max_view_distance = 100
-        self.view_mask = self.calculate_view_mask()
-
-    def set_img_shape(self, rows, cols):
-        if rows != self.rows or cols != self.columns:
-            self.init_img_shape(rows, cols)
-
-    # Get a mask of the valid image range, filtering by vision angle and distance to camera
-    def calculate_view_mask(self):
-        # transform the whole image to get valid angle of vision
-        view_mask = cv2.warpPerspective(np.ones((self.rows, self.columns)),
-                                        self.perspective_M,
-                                        (self.width, self.height))
-        # mask by distance to the camera point
-        xview, yview = view_mask.nonzero()
-        distances_to_camera = np.sqrt((xview - self.x_camera)**2 + (yview - self.y_camera)**2)
-        away_mask = distances_to_camera > self.max_view_distance
-        # filter by distance mask
-        view_mask[xview[away_mask], yview[away_mask]] = 0
-        return view_mask
-
-    @staticmethod
-    def rover_cam_to_map_coords(dst_width, dst_height):
-        # Get source and destination squares to transform image from rover camera
-        # perspective, to a map view perspective.
-        dst_size = 5
-        bottom_offset = 6
-        source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
-        destination = np.float32([
-                [dst_width/2 - dst_size, dst_height - bottom_offset],
-                [dst_width/2 + dst_size, dst_height - bottom_offset],
-                [dst_width/2 + dst_size, dst_height - 2*dst_size - bottom_offset],
-                [dst_width/2 - dst_size, dst_height - 2*dst_size - bottom_offset],
-                ])
-        return source, destination
-
-
-RoverCam = RoverCamera()
-
 # Identify pixels above the threshold
 # Threshold of RGB > 160 does a nice job of identifying ground pixels only
 def color_thresh(img, rgb_thresh=(160, 160, 160)):
@@ -147,6 +86,84 @@ def pix_to_world(xpix, ypix, xpos, ypos, yaw, world_size, scale):
 def perspect_transform(img, M):
     return cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]))
 
+# Store camera perspective matrix and view_mask to avoid recalculation on every step
+class RoverCamera():
+    def __init__(self):
+        # Init vars with default shape
+        self.init_img_shape()
+
+    @property
+    def width(self):
+        return self.columns
+
+    @property
+    def height(self):
+        return self.rows
+
+    def init_img_shape(self, rows=160, cols=320):
+        self.rows = rows
+        self.columns = cols
+        src, dst = RoverCamera.rover_cam_to_map_coords(self.width, self.height)
+        self.perspective_M = cv2.getPerspectiveTransform(src, dst)
+        # filters by distance to camera and angle
+        self.x_camera = self.width/2
+        self.y_camera = self.height
+        self.view_mask = cv2.warpPerspective(np.ones((self.rows, self.columns)),
+                                             self.perspective_M,
+                                             (self.width, self.height))
+        self.calculate_view_mask_histogram()
+
+
+    def set_img_shape(self, rows, cols):
+        if rows != self.rows or cols != self.columns:
+            self.init_img_shape(rows, cols)
+
+    def get_target_direction(self, target_angle):
+        if target_angle <= self.angle_ranges[1]:  # negative angles (right)
+            return 'right' if target_angle > self.angle_ranges[0] else 'out_right'
+        elif target_angle >= self.angle_ranges[2]:
+            return 'left' if target_angle < self.angle_ranges[3] else 'out_left'
+        else:
+            return 'center'
+
+    def calculate_view_mask_histogram(self):
+        mask_xpix, mask_ypix = rover_coords(self.view_mask)
+        mask_dist, mask_angles = to_polar_coords(mask_xpix, mask_ypix)
+        self.dist_ranges = [0, 10, 20, 30]
+        mask_angles_deg = mask_angles*180/np.pi
+        self.angle_ranges = np.linspace(min(mask_angles_deg), max(mask_angles_deg), 4)
+        self.view_mask_H = np.histogram2d(mask_dist, mask_angles_deg,
+                                          bins=(self.dist_ranges, self.angle_ranges))[0]
+
+    def get_vision_indexes(self, distances, angles_rad):
+        angles_deg = angles_rad*180/np.pi
+        H = np.histogram2d(distances, angles_deg, bins=(self.dist_ranges, self.angle_ranges))[0]
+        H_norm = H / self.view_mask_H
+        H_norm += 1e-6  # ensure that no index is 0 to avoid zero division problems
+        result = {'near_center': H_norm[0, 1], 'near_left': H_norm[0, 2], 'near_right': H_norm[0, 0],
+                  'mid_center': H_norm[1, 1], 'mid_left': H_norm[1, 2], 'mid_right': H_norm[1, 0],
+                  'far_center': H_norm[2, 1], 'far_left': H_norm[2, 2], 'far_right': H_norm[2, 0]}
+        print(result)
+        return result
+
+    @staticmethod
+    def rover_cam_to_map_coords(dst_width, dst_height):
+        # Get source and destination squares to transform image from rover camera
+        # perspective, to a map view perspective.
+        dst_size = 5
+        bottom_offset = 6
+        source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
+        destination = np.float32([
+                [dst_width/2 - dst_size, dst_height - bottom_offset],
+                [dst_width/2 + dst_size, dst_height - bottom_offset],
+                [dst_width/2 + dst_size, dst_height - 2*dst_size - bottom_offset],
+                [dst_width/2 - dst_size, dst_height - 2*dst_size - bottom_offset],
+                ])
+        return source, destination
+
+
+RoverCam = RoverCamera()
+
 # Apply the above functions in succession and update the Rover state accordingly
 def perception_step(Rover):
         # Set camera size (will update transform params only on change)
@@ -194,15 +211,18 @@ def perception_step(Rover):
 
     Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
 
-    if len(xpix_rock_rov):
-        Rover.seeing_rock = True
-        dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
-        print("SEEING ROCK")
-    else:
-        Rover.seeing_rock = False
-        dist, angles = to_polar_coords(xpix_rov, ypix_rov)
+    dist, angles = to_polar_coords(xpix_rov, ypix_rov)
     Rover.nav_dists = dist
     Rover.nav_angles = angles
+
+    if len(xpix_rock_rov):
+        dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
+        Rover.seeing_rock = True
+        Rover.rock_dists = dist
+        Rover.rock_angles = angles
+    else:
+        Rover.seeing_rock = False
+
     # mean_dir = np.mean(angles)
     # mean_dist = np.mean(dist)
     # Perform perception steps to update Rover()
