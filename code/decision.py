@@ -45,7 +45,7 @@ def decision_step(Rover):
         print("FORCING CRASH AVOID")
         L_R_ratio = vision['near_left']/vision['near_right']  # denom is never zero (see perception)
         if min(L_R_ratio, 1.0/L_R_ratio) <= 0.6:
-            return 15 if vision['near_left'] > vision['near_right'] else -15
+            return 30 if vision['near_left'] > vision['near_right'] else -30
         else:
             return 0
 
@@ -88,8 +88,9 @@ def decision_step(Rover):
     def go_forward_avoiding_obstacles(target_angle, target_distance=np.inf, max_speed=2.5):
 
         target_speed = 0  # by default, stop
-        if target_distance < RoverCam.dist_ranges[2]:  # lower than our resolution for obstacles
+        if target_distance < RoverCam.dist_ranges[-1]:  # lower than our resolution for obstacles
             print("Reaching some object")
+            target_angle += obstacle_avoiding_offset() + not_crashing_offset()
             target_speed = max_speed*target_distance/20
         elif vision['near_center'] > 0.9:
             target_angle = get_nav_angle(target_angle)
@@ -99,25 +100,22 @@ def decision_step(Rover):
                 # The less clear we see ahead, the more offset to avoid obstacles we add
                 obstacle_offset = obstacle_avoiding_offset()
                 offset_scale = 0.9/ahead_clearness
-                print("CLEARNESS: {}  |  OFFSET: {} | SCALE: {} ".format(ahead_clearness,
-                                                                         obstacle_offset,
-                                                                         offset_scale))
                 target_angle += obstacle_offset*offset_scale
                 target_angle += not_crashing_offset()
 
-        print("TARGET_ANGLE: {}".format(target_angle))
-
-        Rover.steer = target_angle
-        if Rover.vel > 1.5*target_speed:
-            Rover.brake = Rover.brake_set
-            Rover.throttle = 0
-        elif Rover.vel < target_speed:
-            Rover.brake = 0
-            Rover.throttle = Rover.throttle_set
-        else:  # Go loosely
-            Rover.brake = 0
-            Rover.throttle = 0
-        return target_speed > 0
+        is_navigable = target_speed > 0 and target_angle is not None
+        if is_navigable:
+            Rover.steer = target_angle
+            if Rover.vel > 1.5*target_speed:
+                Rover.brake = Rover.brake_set
+                Rover.throttle = 0
+            elif Rover.vel < target_speed:
+                Rover.brake = 0
+                Rover.throttle = Rover.throttle_set
+            else:  # Go loosely
+                Rover.brake = 0
+                Rover.throttle = 0
+        return is_navigable
 
     # Example:
     # Check if we have vision data to make decisions with

@@ -131,7 +131,7 @@ class RoverCamera():
         mask_dist, mask_angles = to_polar_coords(mask_xpix, mask_ypix)
         self.dist_ranges = [0, 10, 20, 30]
         mask_angles_deg = mask_angles*180/np.pi
-        self.angle_ranges = np.linspace(min(mask_angles_deg), max(mask_angles_deg), 4)
+        self.angle_ranges = [min(mask_angles_deg), -5, 5, max(mask_angles_deg)]
         self.view_mask_H = np.histogram2d(mask_dist, mask_angles_deg,
                                           bins=(self.dist_ranges, self.angle_ranges))[0]
 
@@ -144,6 +144,9 @@ class RoverCamera():
                   'mid_center': H_norm[1, 1], 'mid_left': H_norm[1, 2], 'mid_right': H_norm[1, 0],
                   'far_center': H_norm[2, 1], 'far_left': H_norm[2, 2], 'far_right': H_norm[2, 0]}
         print(result)
+        # result = {'near_center': 0.1, 'near_left': 0.1, 'near_right': 0.1,
+        #          'mid_center': 0.1, 'mid_left': 0.1, 'mid_right': 0.1,
+        #          'far_center': 0.1, 'far_left': 0.1, 'far_right': 0.1}
         return result
 
     @staticmethod
