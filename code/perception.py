@@ -129,7 +129,7 @@ class RoverCamera():
     def calculate_view_mask_histogram(self):
         mask_xpix, mask_ypix = rover_coords(self.view_mask)
         mask_dist, mask_angles = to_polar_coords(mask_xpix, mask_ypix)
-        self.dist_ranges = [0, 10, 20, 30]
+        self.dist_ranges = [0, 10, 20, 35]
         mask_angles_deg = mask_angles*180/np.pi
         self.angle_ranges = [min(mask_angles_deg), -5, 5, max(mask_angles_deg)]
         self.view_mask_H = np.histogram2d(mask_dist, mask_angles_deg,

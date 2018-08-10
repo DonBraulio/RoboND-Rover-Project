@@ -41,7 +41,8 @@ class RoverState():
     S_FORWARD = 'forward'
     S_STOP = 'stop'
     S_APPROACH_ROCK = 'approach_rock'
-    S_SAW_ROCK = 'saw_rock'
+    S_RECOVER_ROCK = 'saw_rock'
+    S_UNLOCK_ROVER = 'unlock_rover'
 
     def __init__(self):
         self.start_time = None # To record the start time of navigation
@@ -62,7 +63,7 @@ class RoverState():
         self.seeing_rock = False  # just shortcut for len(rock_dists) > 0
         self.ground_truth = ground_truth_3d # Ground truth worldmap
         self.mode = self.S_FORWARD # Current mode (can be forward or stop)
-        self.throttle_set = 0.2 # Throttle setting when accelerating
+        self.throttle_set = 0.8 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
