@@ -41,20 +41,22 @@ def decision_step(Rover):
             Rover.brake = 0
             Rover.steer = 15 if last_seen_rock_angle >= 0 else -15
 
-    def not_crashing_offset():
-        print("FORCING CRASH AVOID")
-        L_R_ratio = vision['near_left']/vision['near_right']  # denom is never zero (see perception)
-        if min(L_R_ratio, 1.0/L_R_ratio) <= 0.6:
-            return 30 if vision['near_left'] > vision['near_right'] else -30
-        else:
-            return 0
+    def balance_offset(right_index, left_index, min_ratio, epsilon=1e-6):
+        right_index += epsilon  # add minutiae value to avoid division by zero
+        left_index += epsilon
+        # check that L/R and R/L aren't below min_ratio
+        if min(right_index/left_index, left_index/right_index) <= min_ratio:
+            return 1 if left_index > right_index else -1
+        return 0
 
-    def obstacle_avoiding_offset():
-        L_R_ratio = vision['far_left']/vision['far_right']  # denom is never zero (see perception)
-        if min(L_R_ratio, 1.0/L_R_ratio) <= 0.8:
-            return 3 if vision['far_left'] > vision['far_right'] else -3
-        else:
-            return 0
+    def avoid_crash_steering():
+        return 30 * balance_offset(vision['near_right'], vision['near_left'], 0.6)
+
+    def avoid_far_obstacle_steering(steer_val, target_angle):
+        if target_angle > 0:  # prefer left
+            return steer_val * balance_offset(vision['far_center'], vision['far_left'], 0.8)
+        else:  # prefer right
+            return steer_val * balance_offset(vision['far_right'], vision['far_center'], 0.8)
 
     def get_nav_angle(target_angle):
         best_angle = 0
@@ -78,30 +80,27 @@ def decision_step(Rover):
     #     print("ANGLE RANGES: {} to {}".format(min_angle, max_angle))
     #     return np.clip(min_angle, max_angle, target_angle)
 
-    def get_future_place(target_angle):
-        if target_angle > 5:
-            return 'far_left'
-        elif target_angle < -5:
-            return 'far_right'
-        else: return 'far_center'
+    # def get_future_place(target_angle):
+    #     if target_angle > 5:
+    #         return 'far_left'
+    #     elif target_angle < -5:
+    #         return 'far_right'
+    #     else: return 'far_center'
 
-    def go_forward_avoiding_obstacles(target_angle, target_distance=np.inf, max_speed=2.5):
+    def go_forward_avoiding_obstacles(target_angle, target_distance=np.inf, max_speed=5):
 
         target_speed = 0  # by default, stop
         if target_distance < RoverCam.dist_ranges[-1]:  # lower than our resolution for obstacles
-            print("Reaching some object")
-            target_angle += obstacle_avoiding_offset() + not_crashing_offset()
-            target_speed = max_speed*target_distance/20
+            target_angle += avoid_crash_steering()
+            target_speed = max_speed * target_distance / RoverCam.dist_ranges[1]
         elif vision['near_center'] > 0.9:
             target_angle = get_nav_angle(target_angle)
             if target_angle is not None:
-                ahead_clearness = min(vision['near_center'], vision[get_future_place(target_angle)])
-                target_speed = max_speed*ahead_clearness
+                ahead_clearness = min(vision['near_center'], vision['mid_center'])
+                target_speed = max_speed * ahead_clearness
                 # The less clear we see ahead, the more offset to avoid obstacles we add
-                obstacle_offset = obstacle_avoiding_offset()
-                offset_scale = 0.9/ahead_clearness
-                target_angle += obstacle_offset*offset_scale
-                target_angle += not_crashing_offset()
+                target_angle += avoid_far_obstacle_steering(5 / ahead_clearness, target_angle)
+                target_angle += avoid_crash_steering()  # avoid short range crash
 
         is_navigable = target_speed > 0 and target_angle is not None
         if is_navigable:
@@ -149,8 +148,8 @@ def decision_step(Rover):
             if Rover.vel > 0.2:  # Brake if moving!
                 Rover.brake = Rover.brake_set
                 Rover.steer = 0
-            elif min(vision['near_center'], vision['far_center']) < 0.9 \
-                 or min(vision['near_left'], vision['near_right']) < 0.5:
+            elif min(vision['near_center'], vision['mid_center']) < 0.9 \
+                    or balance_offset(vision['far_center'], vision['far_left'], 0.8) != 0:
                 Rover.brake = 0
                 Rover.steer = steering_direction
             else:
@@ -165,7 +164,7 @@ def decision_step(Rover):
 
                 # If we reach counter limit or can't go forward, go to rock recovery mode
                 if seen_rock_counter <= 0 \
-                   or not go_forward_avoiding_obstacles(last_seen_rock_angle):
+                   or not go_forward_avoiding_obstacles(last_seen_rock_angle, 2.5):
                     steering_counter = 0
                     Rover.mode = Rover.S_SAW_ROCK
 
@@ -176,9 +175,8 @@ def decision_step(Rover):
                 target_angle = mean_angle(Rover.rock_angles)
                 target_distance = np.min(Rover.rock_dists)
                 last_seen_rock_angle = target_angle  # keep in case we lose the rock for a moment
-
                 # Try to go forward
-                if not go_forward_avoiding_obstacles(target_angle, target_distance, 1.5):
+                if not go_forward_avoiding_obstacles(target_angle, target_distance, 2.5):
                     steering_direction = get_next_steering(target_angle)
 
         elif Rover.mode == Rover.S_SAW_ROCK:  # Reset steering_counter before entering here
@@ -186,8 +184,9 @@ def decision_step(Rover):
             steer_to_find_rock()
             steering_counter += 1
             if Rover.seeing_rock:
-                seen_rock_counter = 15
-                Rover.mode = Rover.S_APPROACH_ROCK
+                if Rover.steer < 2:  # keep steering until the rock is in the center (< 2 deg)
+                    seen_rock_counter = 15
+                    Rover.mode = Rover.S_APPROACH_ROCK
             elif steering_counter > 150:  # steering limit (about 5 secs turning)
                 steering_direction = get_next_steering(last_seen_rock_angle)
                 Rover.mode = Rover.S_STOP
