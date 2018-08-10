@@ -103,18 +103,18 @@ def decision_step(Rover):
             target_angle = get_nav_angle(target_angle)
             if target_angle is not None:
                 ahead_clearness = min(vision['near_center'], vision['mid_center'])
-                if ahead_clearness > 0.9 and vision['far_center'] > 0.6:
-                    target_speed = max_speed * (vision['far_center'] - 0.5) / 0.5
+                if ahead_clearness > 0.9 and vision['far_center'] > 0.25:
+                    target_speed = max_speed * vision['far_center']
                 else:
                     target_speed = 1.0  # obstacle ahead
                 # The less clear we see ahead, the more offset to avoid obstacles we add
-                target_angle += avoid_far_obstacle_steering(8 / ahead_clearness, target_angle)
+                target_angle += avoid_far_obstacle_steering(10 / ahead_clearness, target_angle)
                 target_angle += avoid_crash_steering()  # avoid short range crash
 
         is_navigable = target_speed > 0 and target_angle is not None
         if is_navigable:
             Rover.steer = target_angle
-            if Rover.vel > 1.5*target_speed:
+            if Rover.vel > 2 * target_speed:
                 Rover.brake = Rover.brake_set
                 Rover.throttle = 0
             elif Rover.vel < target_speed:
