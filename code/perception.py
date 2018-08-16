@@ -23,7 +23,7 @@ class RoverCamera():
         # filters by distance to camera and angle
         self.x_camera = self.width/2
         self.y_camera = self.height
-        self.max_view_distance = 100
+        self.max_view_distance = rows/3
         self.view_mask = self.calculate_view_mask()
 
     def set_img_shape(self, rows, cols):
@@ -154,7 +154,7 @@ def perception_step(Rover):
         # Warp camera to map-view
     warped = perspect_transform(Rover.img, RoverCam.perspective_M)
         # Apply thresholds to detect navigable map and rocks first
-    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150))
+    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
     rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
     obstacles = np.abs(1 - nav_thres)*RoverCam.view_mask  # opossite to navigable terrain
 
@@ -194,15 +194,37 @@ def perception_step(Rover):
 
     Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
 
+
+    dist, angles = to_polar_coords(xpix_rov, ypix_rov)
+    Rover.nav_dists = dist
+    Rover.nav_angles = angles
+
+    Rover.obstacle_ahead = False
+    # Obstacle avoid: if we see an obstacle ahead, only see to the left
+    if len(xpix_obs_rov):
+        dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
+        Rover.obs_dists = dist
+        Rover.obs_angles = angles
+        ahead_mask = np.abs(angles - np.mean(angles)) < (5 * np.pi / 180)
+        obs_nearby = dist[ahead_mask]
+
+        nearest_values = np.mean(obs_nearby.argsort()[:np.min([20, len(obs_nearby) - 1])])
+        middle_obstacle = nearest_values < np.mean(Rover.nav_dists)
+        if middle_obstacle:
+            left_side_mask = Rover.nav_angles > 0
+            Rover.nav_angles = Rover.nav_angles[left_side_mask]
+            Rover.nav_dists = Rover.nav_dists[left_side_mask]
+            print("PIRATE MODE!")
+
+
     if len(xpix_rock_rov):
         Rover.seeing_rock = True
         dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
+        Rover.rock_dists = dist
+        Rover.rock_angles = angles
         print("SEEING ROCK")
     else:
         Rover.seeing_rock = False
-        dist, angles = to_polar_coords(xpix_rov, ypix_rov)
-    Rover.nav_dists = dist
-    Rover.nav_angles = angles
     # mean_dir = np.mean(angles)
     # mean_dist = np.mean(dist)
     # Perform perception steps to update Rover()

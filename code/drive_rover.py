@@ -57,20 +57,25 @@ class RoverState():
         self.brake = 0 # Current brake value
         self.nav_angles = None # Angles of navigable terrain pixels
         self.nav_dists = None # Distances of navigable terrain pixels
+        self.rock_angles = None # Angles of navigable terrain pixels
+        self.rock_dists = None # Distances of navigable terrain pixels
+        self.obs_dists = None
+        self.obs_angles = None
         self.ground_truth = ground_truth_3d # Ground truth worldmap
         self.mode = self.S_FORWARD # Current mode (can be forward or stop)
-        self.throttle_set = 0.2 # Throttle setting when accelerating
+        self.throttle_set = 0.4 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
         # when you can keep going and when you should stop.  Feel free to
         # get creative in adding new fields or modifying these!
-        self.stop_forward = 50 # Threshold to initiate stopping
-        self.go_forward = 500 # Threshold to go forward again
+        self.stop_forward = 100 # Threshold to initiate stopping
+        self.go_forward = 800 # Threshold to go forward again
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
         # on screen in autonomous mode
         self.vision_image = np.zeros((160, 320, 3), dtype=np.float) 
+        self.max_view_distance = self.vision_image.shape[0] / 3
         # Worldmap
         # Update this image with the positions of navigable terrain
         # obstacles and rock samples
@@ -83,6 +88,7 @@ class RoverState():
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
         self.seeing_rock = False
+        self.obstacle_ahead = False
 
 # Initialize our rover 
 Rover = RoverState()
