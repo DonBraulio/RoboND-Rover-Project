@@ -2,6 +2,7 @@ import numpy as np
 
 steering_counter = 0
 seen_rock_counter = 15
+lost_rock_counter = 0
 last_seen_rock = 0
 steering_direction = 0
 # This is where you can build a decision tree for determining throttle, brake and steer 
@@ -9,6 +10,7 @@ steering_direction = 0
 def decision_step(Rover):
     global steering_counter
     global seen_rock_counter
+    global lost_rock_counter
     global last_seen_rock
     global steering_direction
 
@@ -61,8 +63,8 @@ def decision_step(Rover):
             print("Found the ROCK! Approaching...")
             # We lost the rock for 5 consecutive frames, stop and find it
             if not Rover.seeing_rock:
-                seen_rock_counter -= 1
-                if seen_rock_counter <= 0:
+                lost_rock_counter -= 1
+                if lost_rock_counter <= 0:
                     steering_counter = 0
                     Rover.mode = Rover.S_SAW_ROCK
 
@@ -81,7 +83,7 @@ def decision_step(Rover):
                     Rover.brake = 0
                     Rover.throttle = 0
                 last_seen_rock = mean_angle(Rover.nav_angles)
-                seen_rock_counter = 15
+                lost_rock_counter = 15
                 Rover.steer = last_seen_rock
         elif Rover.mode == Rover.S_SAW_ROCK:  # Reset steering_counter before entering here
             print("We lost the rock, find it now!!!")
@@ -96,9 +98,12 @@ def decision_step(Rover):
         # Check for Rover.mode status
         elif Rover.mode == Rover.S_FORWARD:
             if Rover.seeing_rock:
-                Rover.mode = Rover.S_APPROACH_ROCK
+                seen_rock_counter += 1
+                if seen_rock_counter > 5:  # see rock for 5 consecutive frames
+                    Rover.mode = Rover.S_APPROACH_ROCK
             # Check the extent of navigable terrain
             elif len(Rover.nav_angles) >= Rover.stop_forward:  
+                seen_rock_counter = 0
                 # If mode is forward, navigable terrain looks good 
                 # and velocity is below max, then throttle 
                 visibility_factor = get_visibility_factor()
@@ -117,6 +122,7 @@ def decision_step(Rover):
                 Rover.steer = mean_angle(Rover.nav_angles) + 5
             # If there's a lack of navigable terrain pixels then go to 'stop' mode
             elif len(Rover.nav_angles) < Rover.stop_forward:
+                seen_rock_counter = 0
                 # Set mode to "stop" and hit the brakes!
                 Rover.throttle = 0
                 # Set brake to stored brake value
