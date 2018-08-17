@@ -2,7 +2,7 @@ import numpy as np
 
 steering_counter = 0
 steering_stopped = False
-seen_rock_counter = 0
+seen_rock_flag = False
 lost_rock_counter = 0
 last_seen_rock = 0
 last_steering = 0
@@ -13,7 +13,7 @@ locked_counter = 0
 def decision_step(Rover):
     global rock_seeking_counter
     global steering_stopped
-    global seen_rock_counter
+    global seen_rock_flag
     global lost_rock_counter
     global last_seen_rock
     global last_steering
@@ -74,37 +74,38 @@ def decision_step(Rover):
         else:
 
             visibility_factor = get_visibility_factor()
+            # avoid_obstacle_offset = npRover.obs_dists[Rover.obs_dists < 
 
             if Rover.seeing_rock:
-                seen_rock_counter += 1
-                last_seen_rock = np.mean(Rover.rock_angles)
-                rock_seeking_counter = 15
+                seen_rock_flag = True
+                last_seen_rock = np.mean(Rover.rock_angles) * 180 / np.pi
+                rock_seeking_counter = 35
 
-            if seen_rock_counter > 3:
-                go_straight_margin = (5 * np.pi / 180)
+            if seen_rock_flag:  # see the rock two frames
+                go_straight_margin = 4
                 rock_dist = np.min(Rover.rock_dists)
-                print("ROCK DISTANCE: {}".format(rock_dist))
-                if np.abs(last_seen_rock) < go_straight_margin or rock_dist > 20:
+                print("ROCK DISTANCE: {} | ANGLE: {}".format(rock_dist, last_seen_rock))
+                if np.abs(last_seen_rock) < go_straight_margin or rock_dist > 25:
                     rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
                     rock_dist_factor = np.clip( 0.2, 1, rock_dist_factor )
                     target_angle = last_seen_rock
-                    target_speed = 1.5 * rock_dist_factor + 1
+                    target_speed = 1 * rock_dist_factor + 1
                 else:
-                    target_angle = 15 if last_seen_rock > 0 else -15
+                    target_angle = last_seen_rock
                     target_speed = 0
 
                 # Ensure that we aren't in this state forever
                 if rock_seeking_counter:
                     rock_seeking_counter -= 1
                 else:
-                    seen_rock_counter = 0  # we lost the rock, let it go man
+                    seen_rock_flag = False  # we lost the rock, let it go man
             else:
                 nav_angles = Rover.nav_angles
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.6)
                 if not closed_boundary and not steering_stopped and len(nav_angles) >= Rover.stop_forward:
                     target_speed = visibility_factor * 2
-                    target_angle = mean_angle(nav_angles) + 5  # left wall follower
+                    target_angle = mean_angle(nav_angles) + 8  # left wall follower
                     last_steering = 1 if target_angle >= 0 else -1
                 else:
                     print("STEERING STOPPED")
