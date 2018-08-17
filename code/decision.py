@@ -74,7 +74,8 @@ def decision_step(Rover):
         else:
 
             visibility_factor = get_visibility_factor()
-            # avoid_obstacle_offset = npRover.obs_dists[Rover.obs_dists < 
+            nearby_angles = Rover.obs_angles[Rover.obs_dists < 10]
+            avoid_obstacle_offset = - (180 / np.pi) * np.mean(nearby_angles) if len(nearby_angles) else 0
 
             if Rover.seeing_rock:
                 seen_rock_flag = True
@@ -88,7 +89,7 @@ def decision_step(Rover):
                 if np.abs(last_seen_rock) < go_straight_margin or rock_dist > 25:
                     rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
                     rock_dist_factor = np.clip( 0.2, 1, rock_dist_factor )
-                    target_angle = last_seen_rock
+                    target_angle = last_seen_rock + avoid_obstacle_offset
                     target_speed = 1 * rock_dist_factor + 1
                 else:
                     target_angle = last_seen_rock
@@ -105,7 +106,7 @@ def decision_step(Rover):
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.6)
                 if not closed_boundary and not steering_stopped and len(nav_angles) >= Rover.stop_forward:
                     target_speed = visibility_factor * 2
-                    target_angle = mean_angle(nav_angles) + 8  # left wall follower
+                    target_angle = mean_angle(nav_angles) + 8 + avoid_obstacle_offset  # left wall follower
                     last_steering = 1 if target_angle >= 0 else -1
                 else:
                     print("STEERING STOPPED")
