@@ -199,23 +199,11 @@ def perception_step(Rover):
     Rover.nav_dists = dist
     Rover.nav_angles = angles
 
-    Rover.obstacle_ahead = False
-    # Obstacle avoid: if we see an obstacle ahead, only see to the left
+    # # Obstacle avoid: if we see an obstacle ahead, only see to the left
     if len(xpix_obs_rov):
         dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
         Rover.obs_dists = dist
         Rover.obs_angles = angles
-        ahead_mask = np.abs(angles - np.mean(angles)) < (5 * np.pi / 180)
-        obs_nearby = dist[ahead_mask]
-
-        nearest_values = np.mean(obs_nearby.argsort()[:np.min([20, len(obs_nearby) - 1])])
-        middle_obstacle = nearest_values < np.mean(Rover.nav_dists)
-        if middle_obstacle:
-            left_side_mask = Rover.nav_angles > 0
-            Rover.nav_angles = Rover.nav_angles[left_side_mask]
-            Rover.nav_dists = Rover.nav_dists[left_side_mask]
-            print("PIRATE MODE!")
-
 
     if len(xpix_rock_rov):
         Rover.seeing_rock = True

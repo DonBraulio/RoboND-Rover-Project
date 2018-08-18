@@ -63,7 +63,7 @@ class RoverState():
         self.obs_angles = None
         self.ground_truth = ground_truth_3d # Ground truth worldmap
         self.mode = self.S_FORWARD # Current mode (can be forward or stop)
-        self.throttle_set = 0.4 # Throttle setting when accelerating
+        self.throttle_set = 0.6 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
@@ -76,6 +76,7 @@ class RoverState():
         # on screen in autonomous mode
         self.vision_image = np.zeros((160, 320, 3), dtype=np.float) 
         self.max_view_distance = self.vision_image.shape[0] / 3
+        self.nearest_object = self.max_view_distance
         # Worldmap
         # Update this image with the positions of navigable terrain
         # obstacles and rock samples
@@ -88,7 +89,6 @@ class RoverState():
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
         self.seeing_rock = False
-        self.obstacle_ahead = False
 
 # Initialize our rover 
 Rover = RoverState()
