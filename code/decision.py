@@ -115,7 +115,7 @@ def decision_step(Rover):
                     # last_steering = 1 if target_angle >= 0 else -1
                 else:
                     print("STOP: STEERING")
-                    target_angle = -15  # steer right
+                    target_angle = -15 if target_angle < 0 else 15
                     steering_stopped = nearest_object_ahead > 40 and nearest_object_target > 40
                     target_speed = 0
 
