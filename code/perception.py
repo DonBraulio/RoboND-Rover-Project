@@ -109,7 +109,7 @@ def to_polar_coords(x_pixel, y_pixel):
     # Calculate distance to each pixel
     dist = np.sqrt(x_pixel**2 + y_pixel**2)
     # Calculate angle away from vertical for each pixel
-    angles = np.arctan2(y_pixel, x_pixel)
+    angles = (180 / np.pi) * np.arctan2(y_pixel, x_pixel)
     return dist, angles
 
 # Define a function to map rover space pixels to world space

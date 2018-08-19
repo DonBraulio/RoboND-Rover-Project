@@ -15,6 +15,14 @@ recovering_rock = False
 def get_n_min_values(arr, N):
     return arr[arr.argsort()[:min(N, len(arr))]]
 
+# Detect nearest obstacles in the target angle, with the given angle span
+def get_nearest_object(Rover, target_angle, span=5):
+    target_mask = np.abs(Rover.obs_angles - target_angle) < span
+    obstacles_ahead = Rover.obs_dists[target_mask]
+    return np.mean(get_n_min_values(obstacles_ahead, 30))\
+                   if len(obstacles_ahead) > 10\
+                   else Rover.max_view_distance
+
 # This is where you can build a decision tree for determining throttle, brake and steer 
 # commands based on the output of the perception_step() function
 def decision_step(Rover):
@@ -28,25 +36,15 @@ def decision_step(Rover):
     global recovering_rock
     global last_nav_angle
 
-    def get_nearest_object(target_angle, span=5):
-        obs_angles = Rover.obs_angles * 180 / np.pi
-        target_mask = np.abs(obs_angles - target_angle) < span
-        obstacles_ahead = Rover.obs_dists[target_mask]
-        return np.mean(get_n_min_values(obstacles_ahead, 30))\
-                       if len(obstacles_ahead) > 10\
-                       else Rover.max_view_distance
-
     def add_obstacle_avoiding_offset(target_angle, margin=40):
-        nearest_object_target = get_nearest_object(target_angle, 10)  # never is zero
+        nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
         if nearest_object_target < margin:
-            nearest_object_left = get_nearest_object(target_angle + 15, 5)
-            nearest_object_right = get_nearest_object(target_angle - 15, 5)
+            nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
+            nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
             if nearest_object_left > margin:  # check left before right (preferred dir)
                 target_angle = target_angle + 5 * (margin / nearest_object_target)
-                # print("PREFERRING LEFT: {}".format(target_angle))
             elif nearest_object_right > margin:
                 target_angle = target_angle - 5 * (margin / nearest_object_target)
-                # print("PREFERRING RIGHT: {}".format(target_angle))
 
         return np.clip(target_angle, -15, 15)
 
@@ -79,19 +77,9 @@ def decision_step(Rover):
 
         else:
 
-            # visibility_factor = get_visibility_factor()
-            # nearby_angles = (180 / np.pi) * Rover.obs_angles[Rover.obs_dists < 25]
-            # angles_level_1 = nearby_angles[np.abs(nearby_angles) < 15]
-            # angles_level_2 = nearby_angles[np.abs(nearby_angles) >= 15]
-            # mean_angles_level_1 = np.mean(angles_level_1) if len(angles_level_1) > 10 else 0
-            # mean_angles_level_2 = np.mean(angles_level_2) if len(angles_level_2) > 10 else 0
-            # avoid_obstacle_offset = - np.clip((5 * mean_angles_level_1 + mean_angles_level_2), -15, 15)
-            # if avoid_obstacle_offset:
-            #     print("OFFSET 1: {} | OFFSET 2: {} | TOTAL: {}".format(mean_angles_level_1, mean_angles_level_2, avoid_obstacle_offset))
-
             if Rover.seeing_rock:
                 seen_rock_flag = True
-                last_seen_rock = np.mean(Rover.rock_angles) * 180 / np.pi
+                last_seen_rock = np.mean(Rover.rock_angles)
                 rock_seeking_counter = 35
 
             if seen_rock_flag:  # see the rock two frames
@@ -99,7 +87,6 @@ def decision_step(Rover):
                 steer_margin = 5
                 rock_dist = np.min(Rover.rock_dists)
                 deviation = np.abs(last_seen_rock)
-                print("ROCK DISTANCE: {} | ANGLE: {}".format(rock_dist, last_seen_rock))
                 if (not recovering_rock and deviation < go_margin) or rock_dist > 30:
                     rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
                     rock_dist_factor = np.clip(rock_dist_factor,  0.2, 1)
@@ -116,7 +103,7 @@ def decision_step(Rover):
                 else:
                     seen_rock_flag = False  # we lost the rock, let it go man
             else:
-                nav_angles = 180 * Rover.nav_angles / np.pi
+                nav_angles = Rover.nav_angles
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
 
@@ -125,9 +112,8 @@ def decision_step(Rover):
                 # print("TARGET: {}".format(target_angle))
                 target_angle = add_obstacle_avoiding_offset(target_angle, 40)
 
-                nearest_object_ahead = get_nearest_object(0, 20)  # obstacle in narrow span ahead
-                nearest_around = get_nearest_object(0, 40)  # obstacle near in the whole visual range
-                print("NEAREST AHEAD: {} | AROUND: {}".format(nearest_object_ahead, nearest_around))
+                nearest_object_ahead = get_nearest_object(Rover, 0, 20)  # obstacle in narrow span ahead
+                nearest_around = get_nearest_object(Rover, 0, 40)  # obstacle near in the whole visual range
 
                 if not closed_boundary and not steering and nearest_object_ahead > 20 and nearest_around > 15:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
