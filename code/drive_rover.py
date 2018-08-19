@@ -75,7 +75,7 @@ class RoverState():
         # Update this image to display your intermediate analysis steps
         # on screen in autonomous mode
         self.vision_image = np.zeros((160, 320, 3), dtype=np.float) 
-        self.max_view_distance = self.vision_image.shape[0] / 3
+        self.max_view_distance = self.vision_image.shape[0] / 2
         self.nearest_object = self.max_view_distance
         # Worldmap
         # Update this image with the positions of navigable terrain
@@ -112,7 +112,7 @@ def telemetry(sid, data):
         fps = frame_counter
         frame_counter = 0
         second_counter = time.time()
-    print("Current FPS: {}".format(fps))
+    # print("Current FPS: {}".format(fps))
 
     if data:
         global Rover

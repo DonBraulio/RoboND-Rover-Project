@@ -23,7 +23,7 @@ class RoverCamera():
         # filters by distance to camera and angle
         self.x_camera = self.width/2
         self.y_camera = self.height
-        self.max_view_distance = rows/3
+        self.max_view_distance = rows/2
         self.view_mask = self.calculate_view_mask()
 
     def set_img_shape(self, rows, cols):
