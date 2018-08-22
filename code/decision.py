@@ -47,6 +47,30 @@ def decision_step(Rover):
     Rover.debug_txt = ''
     Rover.sensors_txt = ''
 
+    current_speed = np.abs(Rover.vel)
+
+    def unlock_mechanism():
+        global locked_counter
+        # Lock watchdog increment
+        if (current_speed < 0.2 and not Rover.picking_up):
+            locked_counter += 1
+        elif current_speed > 0.5:
+            locked_counter = 0
+        # Count reached. Activate unlocking
+        if locked_counter > 300:
+            Rover.brake = 0
+            Rover.throttle = -5
+            Rover.steer = -15
+            if locked_counter > 400:
+                Rover.throttle = 0
+            if locked_counter > 500:
+                Rover.steer = 15
+            if locked_counter > 600:
+                locked_counter = 300
+            Rover.debug_txt += " UNLOCK!"
+            return True
+        return False
+
     def add_obstacle_avoiding_offset(target_angle, margin=40):
         nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
         nearest_object_left = get_nearest_object(Rover, 20, 15)
@@ -75,29 +99,11 @@ def decision_step(Rover):
 
         return np.clip(target_angle, -15, 15)
 
+    if unlock_mechanism():
+        return Rover
+
     # Check if we have vision data to make decisions with
     if len(Rover.nav_angles):
-        current_speed = np.abs(Rover.vel)
-
-        # Unlocking mechanism
-        if (current_speed < 0.2 and not Rover.picking_up):
-            locked_counter += 1
-        elif current_speed > 0.5:
-            locked_counter = 0
-
-        if locked_counter > 200:
-            Rover.brake = 0
-            Rover.throttle = -5
-            Rover.steer = -15
-            if locked_counter > 300:
-                Rover.throttle = 0
-            if locked_counter > 400:
-                Rover.steer = 15
-            if locked_counter > 500:
-                locked_counter = 80
-            Rover.debug_txt += " UNLOCK!"
-            return Rover
-
         # First priority: if we're near sample, brake and pick it up
         if Rover.near_sample:
             Rover.throttle = 0
@@ -145,8 +151,8 @@ def decision_step(Rover):
                 nearest_around = get_nearest_object(Rover, 0, 40)  # obstacle near in the whole visual range
                 Rover.sensors_txt += "{:.0f} | {:.0f} "\
                         .format(nearest_around, nearest_object_ahead)
-                # Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
-                #         .format(Rover.pitch, Rover.roll)
+                Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
+                        .format(Rover.pitch, Rover.roll)
 
                 if not closed_boundary and not steering and nearest_object_ahead > 25:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
@@ -170,6 +176,10 @@ def decision_step(Rover):
                 # Set throttle value to throttle setting
                 Rover.throttle = Rover.throttle_set * ((target_speed - Rover.vel) / target_speed)
                 Rover.brake = 0
+    else:
+        Rover.steer = 15  # avoid blocking after pickup in a blind spot
+        Rover.brake = 0
+        Rover.throttle = 0
 
     # If in a state where want to pickup a rock send pickup command
     if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
