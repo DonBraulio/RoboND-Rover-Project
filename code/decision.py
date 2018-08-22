@@ -49,19 +49,21 @@ def decision_step(Rover):
 
     def add_obstacle_avoiding_offset(target_angle, margin=40):
         nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
-        nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
-        nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
-        if nearest_object_left < margin/2:
-            offset = -3 * (margin/2) / nearest_object_left
+        nearest_object_left = get_nearest_object(Rover, 20, 15)
+        nearest_object_right = get_nearest_object(Rover, -20, 15)
+        if nearest_object_left < margin:
+            offset = -6 * margin / nearest_object_left
             Rover.debug_txt += " >> {:.0f} | ".format(offset)
             target_angle += offset
-        if nearest_object_right < margin/2:
-            offset = 3 * (margin/2) / nearest_object_right
+        if nearest_object_right < margin:
+            offset = 6 * margin / nearest_object_right
             Rover.debug_txt += " << {:.0f} | ".format(offset)
             target_angle += offset
 
         if nearest_object_target < margin:
             Rover.debug_txt += "C"
+            nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
+            nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
             if nearest_object_left > margin:  # check left before right (preferred dir)
                 offset = 5 * (margin / nearest_object_target)
                 target_angle = target_angle + offset
@@ -75,9 +77,12 @@ def decision_step(Rover):
 
     # Check if we have vision data to make decisions with
     if len(Rover.nav_angles):
-        if (np.abs(Rover.vel) < 0.2 and not Rover.picking_up):
+        current_speed = np.abs(Rover.vel)
+
+        # Unlocking mechanism
+        if (current_speed < 0.2 and not Rover.picking_up):
             locked_counter += 1
-        elif np.abs(Rover.vel) > 0.5:
+        elif current_speed > 0.5:
             locked_counter = 0
 
         if locked_counter > 200:
@@ -99,7 +104,6 @@ def decision_step(Rover):
             Rover.brake = Rover.brake_set
 
         else:
-
             if Rover.seeing_rock:
                 seen_rock_flag = True
                 last_seen_rock = np.mean(Rover.rock_angles)
@@ -132,27 +136,30 @@ def decision_step(Rover):
                 if closed_boundary:
                     Rover.debug_txt += " CLOSED"
 
-                target_angle = np.mean(nav_angles) + 10
+                mean_nav_angle = np.mean(nav_angles)
+                target_angle = mean_nav_angle + 10
                 target_angle = np.clip(target_angle, -15, 15)
                 target_angle = add_obstacle_avoiding_offset(target_angle, 40)
 
                 nearest_object_ahead = get_nearest_object(Rover, 0, 20)  # obstacle in narrow span ahead
                 nearest_around = get_nearest_object(Rover, 0, 40)  # obstacle near in the whole visual range
-                Rover.sensors_txt += "AH: {:.0f} | AR: {:.0f} | TG: {:.0f}"\
-                        .format(nearest_object_ahead, nearest_around, target_angle)
+                Rover.sensors_txt += "{:.0f} | {:.0f} "\
+                        .format(nearest_around, nearest_object_ahead)
+                # Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
+                #         .format(Rover.pitch, Rover.roll)
 
-                if not closed_boundary and not steering and nearest_object_ahead > 20 and nearest_around > 15:
+                if not closed_boundary and not steering and nearest_object_ahead > 25:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
                     target_speed = np.clip(target_speed, 0.4, 5)
-                    last_nav_angle = target_angle
+                    last_nav_angle = mean_nav_angle
+                    if current_speed < 0.2:  # avoid steering when we're starting throttle
+                        target_angle = 0
                 else:
-                    target_angle = 10 if last_nav_angle < 0 else -10  # opposite to where I came
-                    steering = nearest_object_ahead < 25 or nearest_around < 10
+                    target_angle = -10 if last_nav_angle < 0 else 10
+                    steering = nearest_around < 10 or nearest_object_ahead < 30 
                     target_speed = 0
 
             Rover.steer = np.clip(target_angle, -15, 15)
-
-            current_speed = np.abs(Rover.vel)
             if current_speed > 0.2 and current_speed > 2.5 * target_speed:  # includes braking until 0
                 Rover.brake = Rover.brake_set
                 Rover.throttle = 0

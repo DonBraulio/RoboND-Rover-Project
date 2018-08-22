@@ -210,7 +210,6 @@ def perception_step(Rover):
         dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
         Rover.rock_dists = dist
         Rover.rock_angles = angles
-        print("SEEING ROCK")
     else:
         Rover.seeing_rock = False
     # mean_dir = np.mean(angles)
