@@ -11,20 +11,29 @@ locked_counter = 0
 last_nav_angle = 0
 recovering_rock = False
 
+
 # Get the N minimum values from array
 def get_n_min_values(arr, N):
     return arr[arr.argsort()[:min(N, len(arr))]]
 
+
+np.seterr(all='raise')
 # Detect nearest obstacles in the target angle, with the given angle span
 def get_nearest_object(Rover, target_angle, span=5):
-    target_mask = np.abs(Rover.obs_angles - target_angle) < span
-    obstacles_ahead = Rover.obs_dists[target_mask]
-    return np.mean(get_n_min_values(obstacles_ahead, 30))\
-                   if len(obstacles_ahead) > 10\
-                   else Rover.max_view_distance
+    if not len(Rover.obs_angles):
+        return Rover.max_view_distance
 
-# This is where you can build a decision tree for determining throttle, brake and steer 
-# commands based on the output of the perception_step() function
+    # Obstacles with angles near target_angle
+    try:
+        target_mask = np.abs(Rover.obs_angles - target_angle) < span
+        obstacles_ahead = Rover.obs_dists[target_mask]
+        if len(obstacles_ahead) < 20:  # avoid false obstacles (e.g: wheel marks)
+            return Rover.max_view_distance
+        return np.mean(get_n_min_values(obstacles_ahead, 30))
+    except RuntimeWarning:
+        import pdb; pdb.set_trace()
+
+
 def decision_step(Rover):
     global rock_seeking_counter
     global steering
@@ -35,22 +44,37 @@ def decision_step(Rover):
     global locked_counter
     global recovering_rock
     global last_nav_angle
+    Rover.debug_txt = ''
+    Rover.sensors_txt = ''
 
     def add_obstacle_avoiding_offset(target_angle, margin=40):
         nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
+        nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
+        nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
+        if nearest_object_left < margin/2:
+            offset = -3 * (margin/2) / nearest_object_left
+            Rover.debug_txt += " >> {:.0f} | ".format(offset)
+            target_angle += offset
+        if nearest_object_right < margin/2:
+            offset = 3 * (margin/2) / nearest_object_right
+            Rover.debug_txt += " << {:.0f} | ".format(offset)
+            target_angle += offset
+
         if nearest_object_target < margin:
-            nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
-            nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
+            Rover.debug_txt += "C"
             if nearest_object_left > margin:  # check left before right (preferred dir)
-                target_angle = target_angle + 5 * (margin / nearest_object_target)
+                offset = 5 * (margin / nearest_object_target)
+                target_angle = target_angle + offset
+                Rover.debug_txt += " | L: {:.0f}".format(offset)
             elif nearest_object_right > margin:
-                target_angle = target_angle - 5 * (margin / nearest_object_target)
+                offset = - 5 * (margin / nearest_object_target)
+                target_angle = target_angle + offset
+                Rover.debug_txt += " | R: {:.0f}".format(offset)
 
         return np.clip(target_angle, -15, 15)
 
     # Check if we have vision data to make decisions with
-    if Rover.nav_angles is not None:
-        print("State: {}".format(Rover.mode))
+    if len(Rover.nav_angles):
         if (np.abs(Rover.vel) < 0.2 and not Rover.picking_up):
             locked_counter += 1
         elif np.abs(Rover.vel) > 0.5:
@@ -66,12 +90,11 @@ def decision_step(Rover):
                 Rover.steer = 15
             if locked_counter > 500:
                 locked_counter = 80
-            print("UNLOCKING!")
+            Rover.debug_txt += " UNLOCK!"
             return Rover
 
         # First priority: if we're near sample, brake and pick it up
         if Rover.near_sample:
-            print("BRAKE! NEAR SAMPLE")
             Rover.throttle = 0
             Rover.brake = Rover.brake_set
 
@@ -106,14 +129,17 @@ def decision_step(Rover):
                 nav_angles = Rover.nav_angles
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
+                if closed_boundary:
+                    Rover.debug_txt += " CLOSED"
 
                 target_angle = np.mean(nav_angles) + 10
                 target_angle = np.clip(target_angle, -15, 15)
-                # print("TARGET: {}".format(target_angle))
                 target_angle = add_obstacle_avoiding_offset(target_angle, 40)
 
                 nearest_object_ahead = get_nearest_object(Rover, 0, 20)  # obstacle in narrow span ahead
                 nearest_around = get_nearest_object(Rover, 0, 40)  # obstacle near in the whole visual range
+                Rover.sensors_txt += "AH: {:.0f} | AR: {:.0f} | TG: {:.0f}"\
+                        .format(nearest_object_ahead, nearest_around, target_angle)
 
                 if not closed_boundary and not steering and nearest_object_ahead > 20 and nearest_around > 15:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
