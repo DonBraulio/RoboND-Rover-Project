@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.linalg import norm
 
 steering_counter = 0
 steering = False
@@ -10,6 +11,7 @@ rock_seeking_counter = 0
 locked_counter = 0
 last_nav_angle = 0
 recovering_rock = False
+initial_pos = None
 
 
 # Get the N minimum values from array
@@ -44,8 +46,12 @@ def decision_step(Rover):
     global locked_counter
     global recovering_rock
     global last_nav_angle
+    global initial_pos
     Rover.debug_txt = ''
     Rover.sensors_txt = ''
+
+    if initial_pos is None:
+        initial_pos = np.array(Rover.pos)
 
     current_speed = np.abs(Rover.vel)
 
@@ -135,15 +141,39 @@ def decision_step(Rover):
                     rock_seeking_counter -= 1
                 else:
                     seen_rock_flag = False  # we lost the rock, let it go man
-            else:
-                nav_angles = Rover.nav_angles
+            else: 
+                mean_nav_angle = np.mean(Rover.nav_angles)
+                current_destination = mean_nav_angle + 10
+
+                # Return to initial_pos!!!
+                if Rover.samples_to_find == Rover.samples_collected:
+                    vec_to_orig = initial_pos - np.array(Rover.pos)  # points to origin
+                    vec_to_orig[0] += 0 if np.abs(vec_to_orig[0]) > 1e-6 else 1e-6
+                    angle_to_orig = (180 / np.pi) * np.arctan(vec_to_orig[1]/vec_to_orig[0])
+                    angle_to_orig = angle_to_orig if vec_to_orig[0] > 0 else -angle_to_orig
+                    dist_to_orig = norm(vec_to_orig)
+                    err_to_orig = Rover.yaw - angle_to_orig
+                    while err_to_orig > 180:
+                        err_to_orig -= 360
+                    while err_to_orig < -180:
+                        err_to_orig += 360
+                    if dist_to_orig > 10:
+                        current_destination = mean_nav_angle - np.clip(err_to_orig, -10, 10)
+                    else:
+                        current_destination = err_to_orig
+                    Rover.debug_txt = 'COMING BACK HOME! {} < {}'.format(norm(vec_to_orig), err_to_orig)
+                    # Reached destination!
+                    if dist_to_orig < 3:
+                        Rover.brake = Rover.brake_set
+                        Rover.throttle = 0
+                        return Rover
+
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
                 if closed_boundary:
                     Rover.debug_txt += " CLOSED"
 
-                mean_nav_angle = np.mean(nav_angles)
-                target_angle = mean_nav_angle + 10
+                target_angle = current_destination
                 target_angle = np.clip(target_angle, -15, 15)
                 target_angle = add_obstacle_avoiding_offset(target_angle, 40)
 
