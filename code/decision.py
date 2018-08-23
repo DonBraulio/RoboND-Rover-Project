@@ -3,7 +3,6 @@ from numpy.linalg import norm
 
 steering_counter = 0
 steering = False
-seen_rock_flag = False
 lost_rock_counter = 0
 last_seen_rock = 0
 # last_steering = 0
@@ -39,7 +38,6 @@ def get_nearest_object(Rover, target_angle, span=5):
 def decision_step(Rover):
     global rock_seeking_counter
     global steering
-    global seen_rock_flag
     global lost_rock_counter
     global last_seen_rock
     # global last_steering
@@ -117,33 +115,27 @@ def decision_step(Rover):
 
         else:
             if Rover.seeing_rock:
-                seen_rock_flag = True
+                rock_seeking_counter = 200
                 last_seen_rock = np.mean(Rover.rock_angles)
-                rock_seeking_counter = 35
 
-            if seen_rock_flag:  # see the rock two frames
-                go_margin = 10
-                steer_margin = 5
+            if rock_seeking_counter:  # see the rock two frames
                 rock_dist = np.min(Rover.rock_dists)
                 deviation = np.abs(last_seen_rock)
-                if (not recovering_rock and deviation < go_margin) or rock_dist > 30:
+                if (not recovering_rock and deviation < 10) or rock_dist > 30:
                     rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
                     rock_dist_factor = np.clip(rock_dist_factor,  0.2, 1)
                     target_angle = add_obstacle_avoiding_offset(last_seen_rock, 20)
                     target_speed = 1 * rock_dist_factor + 1
                 else:
-                    recovering_rock = deviation < steer_margin
+                    recovering_rock = deviation < 5
                     target_angle = last_seen_rock
                     target_speed = 0
 
                 # Ensure that we aren't in this state forever
-                if rock_seeking_counter:
-                    rock_seeking_counter -= 1
-                else:
-                    seen_rock_flag = False  # we lost the rock, let it go man
+                rock_seeking_counter -= 1
             else: 
                 mean_nav_angle = np.mean(Rover.nav_angles)
-                current_destination = mean_nav_angle + 10
+                target_angle = mean_nav_angle + 10  # default target angle
 
                 # Return to initial_pos!!!
                 if Rover.samples_to_find == Rover.samples_collected:
@@ -158,9 +150,9 @@ def decision_step(Rover):
                     while err_to_orig < -180:
                         err_to_orig += 360
                     if dist_to_orig > 10:
-                        current_destination = mean_nav_angle - np.clip(err_to_orig, -10, 10)
+                        target_angle = mean_nav_angle - np.clip(err_to_orig, -10, 10)
                     else:
-                        current_destination = err_to_orig
+                        target_angle = err_to_orig
                     Rover.debug_txt = 'COMING BACK HOME! {} < {}'.format(norm(vec_to_orig), err_to_orig)
                     # Reached destination!
                     if dist_to_orig < 3:
@@ -170,21 +162,18 @@ def decision_step(Rover):
 
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
-                if closed_boundary:
-                    Rover.debug_txt += " CLOSED"
 
-                target_angle = current_destination
                 target_angle = np.clip(target_angle, -15, 15)
                 target_angle = add_obstacle_avoiding_offset(target_angle, 40)
 
-                nearest_object_ahead = get_nearest_object(Rover, 0, 20)  # obstacle in narrow span ahead
-                nearest_around = get_nearest_object(Rover, 0, 40)  # obstacle near in the whole visual range
+                nearest_object_ahead = get_nearest_object(Rover, 0, 10)  # obstacle in narrow span ahead
+                nearest_around = get_nearest_object(Rover, 0, 50)  # obstacle near in the whole visual range
                 Rover.sensors_txt += "{:.0f} | {:.0f} "\
                         .format(nearest_around, nearest_object_ahead)
                 Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
                         .format(Rover.pitch, Rover.roll)
 
-                if not closed_boundary and not steering and nearest_object_ahead > 25:
+                if not closed_boundary and not steering and nearest_object_ahead > 20 and nearest_around > 8.5:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
                     target_speed = np.clip(target_speed, 0.4, 5)
                     last_nav_angle = mean_nav_angle
@@ -192,7 +181,7 @@ def decision_step(Rover):
                         target_angle = 0
                 else:
                     target_angle = -10 if last_nav_angle < 0 else 10
-                    steering = nearest_around < 10 or nearest_object_ahead < 30 
+                    steering = nearest_around < 10 or nearest_object_ahead < 25
                     target_speed = 0
 
             Rover.steer = np.clip(target_angle, -15, 15)
@@ -214,6 +203,7 @@ def decision_step(Rover):
     # If in a state where want to pickup a rock send pickup command
     if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
         Rover.send_pickup = True
+        rock_seeking_counter = 0
     
     return Rover
 
