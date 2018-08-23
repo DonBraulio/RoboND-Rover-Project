@@ -147,18 +147,16 @@ def decision_step(Rover):
                         err_to_orig -= 360
                     while err_to_orig < -180:
                         err_to_orig += 360
-                    if dist_to_orig > 10:
-                        target_angle = np.mean(Rover.nav_angles) - np.clip(err_to_orig, -10, 10)
-                    else:
-                        target_angle = err_to_orig
-                    Rover.debug_txt = 'COMING BACK HOME! {} < {}'.format(norm(vec_to_orig), err_to_orig)
+
+                    target_angle = -err_to_orig
+                    print('GO BACK HOME! {:.1f} < {:.0f}'.format(norm(vec_to_orig), err_to_orig))
                     # Reached destination!
-                    if dist_to_orig < 3:
+                    if dist_to_orig < 5:
                         Rover.brake = Rover.brake_set
                         Rover.throttle = 0
                         return Rover
                 else:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 10
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 3
 
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)

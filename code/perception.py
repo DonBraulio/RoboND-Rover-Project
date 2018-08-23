@@ -183,11 +183,11 @@ def perception_step(Rover):
     Rover.visited_ponderators = (500 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 500
 
     # only add points to worldmap when we've small pitch and roll
-    if roll_err < 1.0 and pitch_err < 2.0:
+    if roll_err < 1.5 and pitch_err < 2.0:
         sure_mask = dist < 30
         ypix_nav_sure = ypix_nav[sure_mask]
         xpix_nav_sure = xpix_nav[sure_mask]
-        Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 20
+        Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 10
 
             # Repeat the transformation to show obstacles on the map
         xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
