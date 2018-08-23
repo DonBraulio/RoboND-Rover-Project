@@ -134,8 +134,6 @@ def decision_step(Rover):
                 # Ensure that we aren't in this state forever
                 rock_seeking_counter -= 1
             else: 
-                mean_nav_angle = np.mean(Rover.nav_angles)
-                target_angle = mean_nav_angle + 10  # default target angle
 
                 # Return to initial_pos!!!
                 if Rover.samples_to_find == Rover.samples_collected:
@@ -150,7 +148,7 @@ def decision_step(Rover):
                     while err_to_orig < -180:
                         err_to_orig += 360
                     if dist_to_orig > 10:
-                        target_angle = mean_nav_angle - np.clip(err_to_orig, -10, 10)
+                        target_angle = np.mean(Rover.nav_angles) - np.clip(err_to_orig, -10, 10)
                     else:
                         target_angle = err_to_orig
                     Rover.debug_txt = 'COMING BACK HOME! {} < {}'.format(norm(vec_to_orig), err_to_orig)
@@ -159,6 +157,8 @@ def decision_step(Rover):
                         Rover.brake = Rover.brake_set
                         Rover.throttle = 0
                         return Rover
+                else:
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 10
 
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
@@ -173,15 +173,15 @@ def decision_step(Rover):
                 Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
                         .format(Rover.pitch, Rover.roll)
 
-                if not closed_boundary and not steering and nearest_object_ahead > 20 and nearest_around > 8.5:
+                if not closed_boundary and not steering and nearest_object_ahead > 15 and nearest_around > 8.5:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
                     target_speed = np.clip(target_speed, 0.4, 5)
-                    last_nav_angle = mean_nav_angle
+                    last_nav_angle = np.mean(Rover.nav_angles)
                     if current_speed < 0.2:  # avoid steering when we're starting throttle
                         target_angle = 0
                 else:
                     target_angle = -10 if last_nav_angle < 0 else 10
-                    steering = nearest_around < 10 or nearest_object_ahead < 25
+                    steering = nearest_around < 10 or nearest_object_ahead < 20
                     target_speed = 0
 
             Rover.steer = np.clip(target_angle, -15, 15)
