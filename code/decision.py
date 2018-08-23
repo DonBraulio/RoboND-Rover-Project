@@ -80,11 +80,11 @@ def decision_step(Rover):
         nearest_object_left = get_nearest_object(Rover, 20, 15)
         nearest_object_right = get_nearest_object(Rover, -20, 15)
         if nearest_object_left < margin:
-            offset = -3 * ((margin) / nearest_object_left) ** 2  # I'm very afraid of rocks!
+            offset = -6 * ((margin) / nearest_object_left) ** 2  # I'm very afraid of rocks!
             Rover.debug_txt += " >> {:.0f} | ".format(offset)
             target_angle += offset
         if nearest_object_right < margin:
-            offset = 3 * ((margin) / nearest_object_right) ** 2
+            offset = 6 * ((margin) / nearest_object_right) ** 2
             Rover.debug_txt += " << {:.0f} | ".format(offset)
             target_angle += offset
 
