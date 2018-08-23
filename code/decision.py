@@ -69,7 +69,7 @@ def decision_step(Rover):
                 Rover.throttle = 0
             if locked_counter > 500:
                 Rover.steer = 15
-            if locked_counter > 600:
+            if locked_counter > 800:
                 locked_counter = 300
             Rover.debug_txt += " UNLOCK!"
             return True
@@ -80,11 +80,11 @@ def decision_step(Rover):
         nearest_object_left = get_nearest_object(Rover, 20, 15)
         nearest_object_right = get_nearest_object(Rover, -20, 15)
         if nearest_object_left < margin:
-            offset = -6 * margin / nearest_object_left
+            offset = -3 * ((margin) / nearest_object_left) ** 2  # I'm very afraid of rocks!
             Rover.debug_txt += " >> {:.0f} | ".format(offset)
             target_angle += offset
         if nearest_object_right < margin:
-            offset = 6 * margin / nearest_object_right
+            offset = 3 * ((margin) / nearest_object_right) ** 2
             Rover.debug_txt += " << {:.0f} | ".format(offset)
             target_angle += offset
 
@@ -121,7 +121,7 @@ def decision_step(Rover):
             if rock_seeking_counter:  # see the rock two frames
                 rock_dist = np.min(Rover.rock_dists)
                 deviation = np.abs(last_seen_rock)
-                if (not recovering_rock and deviation < 10) or rock_dist > 30:
+                if (not recovering_rock and deviation < 20) or rock_dist > 30:
                     rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
                     rock_dist_factor = np.clip(rock_dist_factor,  0.2, 1)
                     target_angle = add_obstacle_avoiding_offset(last_seen_rock, 20)
@@ -156,7 +156,7 @@ def decision_step(Rover):
                         Rover.throttle = 0
                         return Rover
                 else:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 3
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 2  # tend to left
 
                 closed_boundary = len(Rover.obs_dists) and len(Rover.nav_dists)\
                                   and np.max(Rover.nav_dists) < (np.max(Rover.obs_dists) * 0.5)
@@ -171,7 +171,7 @@ def decision_step(Rover):
                 Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
                         .format(Rover.pitch, Rover.roll)
 
-                if not closed_boundary and not steering and nearest_object_ahead > 15 and nearest_around > 8.5:
+                if not closed_boundary and not steering and nearest_object_ahead > 20:
                     target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
                     target_speed = np.clip(target_speed, 0.4, 5)
                     last_nav_angle = np.mean(Rover.nav_angles)
@@ -179,7 +179,8 @@ def decision_step(Rover):
                         target_angle = 0
                 else:
                     target_angle = -10 if last_nav_angle < 0 else 10
-                    steering = nearest_around < 10 or nearest_object_ahead < 20
+                    disbalance = np.abs(add_obstacle_avoiding_offset(0, 40))  # how much should I deviate?
+                    steering = disbalance > 5 or nearest_object_ahead < 25
                     target_speed = 0
 
             Rover.steer = np.clip(target_angle, -15, 15)

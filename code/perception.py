@@ -180,7 +180,7 @@ def perception_step(Rover):
                                       scale)
 
         # Visited places have lesser values [0.5, 1], this is used to ponderate a mean angle
-    Rover.visited_ponderators = (500 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 500
+    Rover.visited_ponderators = (300 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 300
 
     # only add points to worldmap when we've small pitch and roll
     if roll_err < 1.5 and pitch_err < 2.0:
