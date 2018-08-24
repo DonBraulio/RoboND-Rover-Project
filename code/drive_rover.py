@@ -38,11 +38,6 @@ ground_truth_3d = np.dstack((ground_truth*0, ground_truth*255, ground_truth*0)).
 # Define RoverState() class to retain rover state parameters
 class RoverState():
 
-    S_FORWARD = 'forward'
-    S_STOP = 'stop'
-    S_APPROACH_ROCK = 'approach_rock'
-    S_SAW_ROCK = 'saw_rock'
-
     def __init__(self):
         self.start_time = None # To record the start time of navigation
         self.total_time = None # To record total duration of naviagation
@@ -63,24 +58,11 @@ class RoverState():
         self.obs_dists = None
         self.obs_angles = None
         self.ground_truth = ground_truth_3d # Ground truth worldmap
-        self.mode = self.S_FORWARD # Current mode (can be forward or stop)
         self.throttle_set = 0.6 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
-        # The stop_forward and go_forward fields below represent total count
-        # of navigable terrain pixels.  This is a very crude form of knowing
-        # when you can keep going and when you should stop.  Feel free to
-        # get creative in adding new fields or modifying these!
-        self.stop_forward = 100 # Threshold to initiate stopping
-        self.go_forward = 800 # Threshold to go forward again
-        # Image output from perception step
-        # Update this image to display your intermediate analysis steps
-        # on screen in autonomous mode
         self.vision_image = np.zeros((160, 320, 3), dtype=np.float) 
         self.max_view_distance = self.vision_image.shape[0] / 2
         self.nearest_object = self.max_view_distance
-        # Worldmap
-        # Update this image with the positions of navigable terrain
-        # obstacles and rock samples
         self.worldmap = np.zeros((200, 200, 3), dtype=np.float) 
         self.samples_pos = None # To store the actual sample positions
         self.samples_to_find = 0 # To store the initial count of samples
@@ -89,9 +71,21 @@ class RoverState():
         self.near_sample = 0 # Will be set to telemetry value data["near_sample"]
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
-        self.seeing_rock = False
         self.debug_txt = ''
         self.sensors_txt = ''
+
+        # Navigation state vars
+        self.speed = 0           # Absolute value of the velocity
+        self.rock_seeking_counter = 0   # persistence to find a lost rock
+        self.locked_counter = 0         # detect locked vehicle
+        self.last_seen_rock = 0  # angle where a rock was last seen
+        self.last_nav_angle = 0  # steer in this direction when stopped
+        self.steering = False           # hysteresis for steering status
+        self.recovering_rock = False    # recovering rock status
+        self.seeing_rock = False
+        self.initial_pos = None         # come back home after picking all rocks
+        self.dist_to_orig = np.inf      # distance to initial_pos (only calc after picking all rocks)
+
 
 # Initialize our rover 
 Rover = RoverState()
