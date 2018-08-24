@@ -62,13 +62,13 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
 def go_towards_rock(Rover):
     rock_dist = np.min(Rover.rock_dists)
     deviation = np.abs(Rover.last_seen_rock)
-    if (not Rover.recovering_rock and deviation < 20) or rock_dist > 30:
+    if (not Rover.recovering_rock and deviation < 40) or rock_dist > 30:
         rock_dist_factor = rock_dist / (Rover.max_view_distance / 2)
         rock_dist_factor = np.clip(rock_dist_factor,  0.2, 1)
-        target_angle = add_obstacle_avoiding_offset(Rover, Rover.last_seen_rock, 20)
+        target_angle = add_obstacle_avoiding_offset(Rover, Rover.last_seen_rock, 40)
         target_speed = 1 * rock_dist_factor + 1
-    else:
-        Rover.recovering_rock = deviation < 5
+    else:  # steer to center rock again
+        Rover.recovering_rock = deviation > 5
         target_angle = Rover.last_seen_rock
         target_speed = 0
     return target_angle, target_speed
@@ -101,10 +101,10 @@ def go_towards_direction(Rover, preferred_direction):
 
     if not closed_boundary(Rover) and not Rover.steering and nearest_object_ahead > 20:
         target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
-        target_speed = np.clip(target_speed, 0.4, 5)
-        Rover.last_nav_angle = np.mean(Rover.nav_angles)
+        target_speed = 0 if target_speed < 0.2 else np.clip(target_speed, 0.4, 5)
         if Rover.speed < 0.2:  # avoid steering when we're starting throttle
             target_angle = 0
+        Rover.last_nav_angle = np.mean(Rover.nav_angles)
     else:
         target_angle = -10 if Rover.last_nav_angle < 0 else 10
         disbalance = np.abs(add_obstacle_avoiding_offset(Rover, 0, 40))  # how much should I deviate?
@@ -139,16 +139,17 @@ def unlock_mechanism(Rover):
     elif Rover.speed > 0.5:
         Rover.locked_counter = 0
     # Count reached. Activate unlocking
-    if Rover.locked_counter > 300:
+    if Rover.locked_counter > 500:
         Rover.brake = 0
-        Rover.throttle = -5
+        Rover.throttle = 0
         Rover.steer = -15
-        if Rover.locked_counter > 400:
+        if Rover.locked_counter > 600:
+            Rover.throttle = -5
+        if Rover.locked_counter > 700:
             Rover.throttle = 0
-        if Rover.locked_counter > 500:
             Rover.steer = 15
         if Rover.locked_counter > 800:
-            Rover.locked_counter = 300
+            Rover.locked_counter = 0  # try yielding control to visual navigation again
         Rover.debug_txt += " UNLOCK!"
         return True
     return False
@@ -193,7 +194,7 @@ def decision_step(Rover):
             else: 
                 # Free navigation, prefer left and not visited places
                 if Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 2  # tend to left
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 4  # tend to left
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = go_back_home(Rover)
