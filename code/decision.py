@@ -90,22 +90,15 @@ def go_back_home(Rover):
 
 # Avoid obstacles and calculate speed (including STOP condition)
 def go_towards_direction(Rover, preferred_direction):
-    target_angle = add_obstacle_avoiding_offset(Rover, preferred_direction, 40)
-
     nearest_object_ahead = get_nearest_object(Rover, 0, 10)  # obstacle in narrow span ahead
-    nearest_around = get_nearest_object(Rover, 0, 50)  # obstacle near in the whole visual range
-    Rover.sensors_txt += "{:.0f} | {:.0f} "\
-            .format(nearest_around, nearest_object_ahead)
-    Rover.sensors_txt += "P: {:.0f} | R: {:.0f}"\
-            .format(Rover.pitch, Rover.roll)
 
     target_speed = 0
     if not closed_boundary(Rover) and not Rover.steering and nearest_object_ahead > 15:
+        target_angle = add_obstacle_avoiding_offset(Rover, preferred_direction, 40)
         target_speed = 2 * (nearest_object_ahead / 20 - (np.abs(target_angle) / 15))
         target_speed = 0 if target_speed < 0.2 else np.clip(target_speed, 0.4, 5)
-        if Rover.speed < 0.2:  # avoid steering when we're starting throttle
+        if Rover.speed < 0.2 and target_speed > 0:  # avoid steering when we're starting throttle
             target_angle = 0
-        Rover.last_nav_angle = np.mean(Rover.nav_angles)
 
     # Steer on null speed
     if not target_speed:
@@ -113,6 +106,8 @@ def go_towards_direction(Rover, preferred_direction):
         disbalance = np.abs(add_obstacle_avoiding_offset(Rover, 0, 40))  # how much should I deviate?
         Rover.steering = disbalance > 5 or nearest_object_ahead < 25
         target_speed = 0
+    else:
+        Rover.last_nav_angle = target_angle
     return target_angle, target_speed
 
 
