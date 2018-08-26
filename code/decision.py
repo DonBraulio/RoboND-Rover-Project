@@ -14,14 +14,11 @@ def get_nearest_object(Rover, target_angle, span=5):
         return Rover.max_view_distance
 
     # Obstacles with angles near target_angle
-    try:
-        target_mask = np.abs(Rover.obs_angles - target_angle) < span
-        obstacles_ahead = Rover.obs_dists[target_mask]
-        if len(obstacles_ahead) < 20:  # avoid false obstacles (e.g: wheel marks)
-            return Rover.max_view_distance
-        return np.mean(get_n_min_values(obstacles_ahead, 30))
-    except RuntimeWarning:
-        import pdb; pdb.set_trace()
+    target_mask = np.abs(Rover.obs_angles - target_angle) < span
+    obstacles_ahead = Rover.obs_dists[target_mask]
+    if len(obstacles_ahead) < 20:  # avoid false obstacles (e.g: wheel marks)
+        return Rover.max_view_distance
+    return np.mean(get_n_min_values(obstacles_ahead, 30))
 
 
 # Add two components of offsets to the target angle:
@@ -33,6 +30,7 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     # Short range crash avoid: offset increases with inverse distance to near objects
     nearest_object_left = get_nearest_object(Rover, 20, 20)
     nearest_object_right = get_nearest_object(Rover, -20, 20)
+    Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
         offset = -8 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
@@ -188,7 +186,7 @@ def decision_step(Rover):
             else: 
                 # Free navigation, prefer left and not visited places
                 if Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 5  # tend to left
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 2
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = go_back_home(Rover)

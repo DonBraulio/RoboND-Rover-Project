@@ -156,7 +156,7 @@ def perception_step(Rover):
         # Apply thresholds to detect navigable map and rocks first
     nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
     rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
-    obstacles = np.abs(1 - nav_thres)*RoverCam.view_mask  # opossite to navigable terrain
+    obstacles = np.abs(1 - nav_thres) * RoverCam.view_mask  # opossite to navigable terrain
 
         # Calculate navigable pixel values in rover-centric coords
     xpix_rov, ypix_rov = rover_coords(nav_thres)
@@ -179,8 +179,8 @@ def perception_step(Rover):
                                       Rover.worldmap.shape[0],
                                       scale)
 
-        # Visited places have lesser values [0.5, 1], this is used to ponderate a mean angle
-    Rover.visited_ponderators = (300 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 300
+        # Visited places have lesser values [0, 1], this is used to ponderate mean angle
+    Rover.visited_ponderators = (280 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 280
 
     # only add points to worldmap when we've small pitch and roll
     if roll_err < 1.5 and pitch_err < 2.0:
@@ -209,9 +209,9 @@ def perception_step(Rover):
 
         Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
 
-    Rover.vision_image[:,:,0] = 255*obstacles
+    Rover.vision_image[:,:,0] = 255 * obstacles
     # Rover.vision_image[:,:,2] = 255*nav_thres
-    Rover.vision_image[:,:,1] = 255*rock_range
+    Rover.vision_image[:,:,1] = 255 * rock_range
 
     # Show the ponderators in the image
     ypix_img, xpix_img = nav_thres.nonzero()
@@ -230,32 +230,5 @@ def perception_step(Rover):
         Rover.rock_angles = angles
     else:
         Rover.seeing_rock = False
-    # mean_dir = np.mean(angles)
-    # mean_dist = np.mean(dist)
-    # Perform perception steps to update Rover()
-    # TODO: 
-    # NOTE: camera image is coming to you in Rover.img
-    # 1) Define source and destination points for perspective transform
-    # 2) Apply perspective transform
-    # 3) Apply color threshold to identify navigable terrain/obstacles/rock samples
-    # 4) Update Rover.vision_image (this will be displayed on left side of screen)
-        # Example: Rover.vision_image[:,:,0] = obstacle color-thresholded binary image
-        #          Rover.vision_image[:,:,1] = rock_sample color-thresholded binary image
-        #          Rover.vision_image[:,:,2] = navigable terrain color-thresholded binary image
-
-    # 5) Convert map image pixel values to rover-centric coords
-    # 6) Convert rover-centric pixel values to world coordinates
-    # 7) Update Rover worldmap (to be displayed on right side of screen)
-        # Example: Rover.worldmap[obstacle_y_world, obstacle_x_world, 0] += 1
-        #          Rover.worldmap[rock_y_world, rock_x_world, 1] += 1
-        #          Rover.worldmap[navigable_y_world, navigable_x_world, 2] += 1
-
-    # 8) Convert rover-centric pixel positions to polar coordinates
-    # Update Rover pixel distances and angles
-        # Rover.nav_dists = rover_centric_pixel_distances
-        # Rover.nav_angles = rover_centric_angles
-    
- 
-    
-    
+        
     return Rover
