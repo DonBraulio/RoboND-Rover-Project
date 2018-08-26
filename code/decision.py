@@ -136,17 +136,15 @@ def unlock_mechanism(Rover):
     elif Rover.speed > 0.5:
         Rover.locked_counter = 0
     # Count reached. Activate unlocking
-    if Rover.locked_counter > 500:
+    if Rover.locked_counter > 200:
         Rover.brake = 0
-        Rover.throttle = 0
-        Rover.steer = -15
-        if Rover.locked_counter > 600:
-            Rover.throttle = -5
-        if Rover.locked_counter > 700:
+        Rover.throttle = -5  # Phase 1: throttle backwards
+        Rover.steer = 0
+        if Rover.locked_counter > 300:  # Phase 2: steer
             Rover.throttle = 0
-            Rover.steer = 15
-        if Rover.locked_counter > 800:
-            Rover.locked_counter = 0  # try yielding control to visual navigation again
+            Rover.steer = -15
+        if Rover.locked_counter > 400:  # Phase 3: try yielding control to visual navigation again
+            Rover.locked_counter = 0
         Rover.debug_txt += " UNLOCK!"
         return True
     return False
