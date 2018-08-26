@@ -33,12 +33,11 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     # Short range crash avoid: offset increases with inverse distance to near objects
     nearest_object_left = get_nearest_object(Rover, 20, 20)
     nearest_object_right = get_nearest_object(Rover, -20, 20)
-    go_right, go_left = 0, 0
+    offset = 0
     if nearest_object_left < margin:
-        go_right = -3 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
+        offset = -8 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        go_left = 3 * (margin / nearest_object_right) ** 2
-    offset = -go_right if go_right > go_left else go_left
+        offset += 8 * (margin / nearest_object_right) ** 2
     target_angle += offset
     if offset:
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
@@ -136,15 +135,15 @@ def unlock_mechanism(Rover):
     elif Rover.speed > 0.5:
         Rover.locked_counter = 0
     # Count reached. Activate unlocking
-    if Rover.locked_counter > 200:
+    if Rover.locked_counter > 400:
         Rover.brake = 0
         Rover.throttle = -5  # Phase 1: throttle backwards
         Rover.steer = 0
-        if Rover.locked_counter > 300:  # Phase 2: steer
+        if Rover.locked_counter > 500:  # Phase 2: steer
             Rover.throttle = 0
             Rover.steer = -15
-        if Rover.locked_counter > 400:  # Phase 3: try yielding control to visual navigation again
-            Rover.locked_counter = 0
+        if Rover.locked_counter > 600:  # Phase 3: try yielding control to visual navigation again
+            Rover.locked_counter = 300
         Rover.debug_txt += " UNLOCK!"
         return True
     return False
@@ -189,7 +188,7 @@ def decision_step(Rover):
             else: 
                 # Free navigation, prefer left and not visited places
                 if Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 8  # tend to left
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 5  # tend to left
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = go_back_home(Rover)
