@@ -31,14 +31,14 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     target_angle = np.clip(target_angle, -15, 15)
 
     # Short range crash avoid: offset increases with inverse distance to near objects
-    nearest_object_left = get_nearest_object(Rover, 20, 15)
-    nearest_object_right = get_nearest_object(Rover, -20, 15)
+    nearest_object_left = get_nearest_object(Rover, 20, 20)
+    nearest_object_right = get_nearest_object(Rover, -20, 20)
     if nearest_object_left < margin:
-        offset = -9 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
+        offset = -10 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
         Rover.debug_txt += " >> {:.0f} | ".format(offset)
         target_angle += offset
     if nearest_object_right < margin:
-        offset = 9 * (margin / nearest_object_right) ** 2
+        offset = 10 * (margin / nearest_object_right) ** 2
         Rover.debug_txt += " << {:.0f} | ".format(offset)
         target_angle += offset
 
@@ -105,7 +105,6 @@ def go_towards_direction(Rover, preferred_direction):
         target_angle = -10 if Rover.last_nav_angle < 0 else 10
         disbalance = np.abs(add_obstacle_avoiding_offset(Rover, 0, 40))  # how much should I deviate?
         Rover.steering = disbalance > 5 or nearest_object_ahead < 25
-        target_speed = 0
     else:
         Rover.last_nav_angle = target_angle
     return target_angle, target_speed
