@@ -33,9 +33,9 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
-        offset = -8 * (margin / nearest_object_left) ** 2  # I'm very afraid of rocks!
+        offset = -5 * ((margin/2) / nearest_object_left) ** 3 # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        offset += 8 * (margin / nearest_object_right) ** 2
+        offset += 5 * ((margin/2) / nearest_object_right) ** 3
     target_angle += offset
     if offset:
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
@@ -55,6 +55,15 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
             target_angle = target_angle + offset
             Rover.debug_txt += " R: {:.0f} |".format(offset)
     return np.clip(target_angle, -15, 15)
+
+
+def get_steering_to(Rover, target_direction):
+    err = Rover.yaw - target_direction
+    while err > 180:
+        err -= 360
+    while err < -180:
+        err += 360
+    return -err  # this is our target angle
 
 
 def go_towards_rock(Rover):
@@ -78,12 +87,7 @@ def go_back_home(Rover):
     angle_to_orig = (180 / np.pi) * np.arctan(vec_to_orig[1]/vec_to_orig[0])
     angle_to_orig = angle_to_orig if vec_to_orig[0] > 0 else -angle_to_orig
     Rover.dist_to_orig = norm(vec_to_orig)
-    err_to_orig = Rover.yaw - angle_to_orig
-    while err_to_orig > 180:
-        err_to_orig -= 360
-    while err_to_orig < -180:
-        err_to_orig += 360
-    return -err_to_orig  # this is our target angle
+    return get_steering_to(Rover, angle_to_orig)
 
 
 # Avoid obstacles and calculate speed (including STOP condition)
@@ -100,10 +104,13 @@ def go_towards_direction(Rover, preferred_direction):
 
     # Steer on null speed
     if not target_speed:
-        target_angle = -10 if Rover.last_nav_angle < 0 else 10
+        if Rover.last_steering is None:
+            Rover.last_steering = get_steering_to(Rover, Rover.last_nav_yaw)
+        target_angle = -10 if Rover.last_steering < 0 else 10
         Rover.steering = nearest_object_ahead < 40
     else:
-        Rover.last_nav_angle = target_angle
+        Rover.last_nav_yaw = Rover.yaw
+        Rover.last_steering = None
     return target_angle, target_speed
 
 
@@ -186,7 +193,7 @@ def decision_step(Rover):
             else: 
                 # Free navigation, prefer left and not visited places
                 if Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 2
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 4
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = go_back_home(Rover)

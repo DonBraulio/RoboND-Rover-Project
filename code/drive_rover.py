@@ -79,7 +79,8 @@ class RoverState():
         self.rock_seeking_counter = 0   # persistence to find a lost rock
         self.locked_counter = 0         # detect locked vehicle
         self.last_seen_rock = 0  # angle where a rock was last seen
-        self.last_nav_angle = 0  # steer in this direction when stopped
+        self.last_nav_yaw   = 0  # steer in this direction when stopped
+        self.last_steering_angle = None # keep steering
         self.steering = False           # hysteresis for steering status
         self.recovering_rock = False    # recovering rock status
         self.seeing_rock = False
