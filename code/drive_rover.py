@@ -86,6 +86,8 @@ class RoverState():
         self.seeing_rock = False
         self.initial_pos = None         # come back home after picking all rocks
         self.dist_to_orig = np.inf      # distance to initial_pos (only calc after picking all rocks)
+        self.last_removed_POI = time.time()
+
 
 
 # Initialize our rover 

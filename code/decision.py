@@ -1,4 +1,6 @@
+import time
 import numpy as np
+
 from numpy.linalg import norm
 
 
@@ -83,14 +85,12 @@ def go_towards_rock(Rover):
     return target_angle, target_speed
 
 
-def get_home_direction(Rover):
-    vec_to_orig = Rover.initial_pos - np.array(Rover.pos)  # points to origin
-    vec_to_orig[0] += 0 if np.abs(vec_to_orig[0]) > 1e-6 else 1e-6
-    angle_to_orig = (180 / np.pi) * np.arctan(vec_to_orig[1]/vec_to_orig[0])
-    angle_to_orig = angle_to_orig if vec_to_orig[0] > 0 else -angle_to_orig
-    Rover.dist_to_orig = norm(vec_to_orig)
-    steering = get_steering_to(Rover, angle_to_orig)
-    return steering
+def get_point_direction(Rover, target_point):
+    vector = target_point - np.array(Rover.pos)  # vector pointing to target_direction
+    vector[0] += 0 if np.abs(vector[0]) > 1e-6 else 1e-6  # avoid div by zero
+    vector_arg = (180 / np.pi) * np.arctan(vector[1]/vector[0])
+    vector_arg = vector_arg if vector[0] > 0 else -vector_arg
+    return get_steering_to(Rover, vector_arg)
 
 
 # Avoid obstacles and calculate speed (including STOP condition)
@@ -100,8 +100,8 @@ def go_towards_direction(Rover, preferred_direction):
     target_speed = 0
     target_angle = add_obstacle_avoiding_offset(Rover, preferred_direction, 40)
     deviation = np.abs(target_angle)
-    if not closed_boundary(Rover) and not Rover.steering and nearest_object_ahead > 15:
-        if deviation > 13:
+    if not closed_boundary(Rover) and not Rover.steering and nearest_object_ahead > 25:
+        if deviation >= 14:
             target_speed = 1
         else:
             target_speed = 2 * (nearest_object_ahead / 20 - (deviation / 15))
@@ -144,13 +144,13 @@ def unlock_mechanism(Rover):
     # Lock watchdog increment
     if (Rover.speed < 0.2 and not Rover.picking_up):
         Rover.locked_counter += 1
-    elif Rover.speed > 0.5:
+    elif Rover.speed > 0.8:
         Rover.locked_counter = 0
     # Count reached. Activate unlocking
     if Rover.locked_counter > 400:
         Rover.brake = 0
         Rover.throttle = -5  # Phase 1: throttle backwards
-        Rover.steer = 0
+        Rover.steer = 5
         if Rover.locked_counter > 500:  # Phase 2: steer
             Rover.throttle = 0
             Rover.steer = -15
@@ -170,17 +170,48 @@ def finished_mission(Rover):
     return False
 
 
+def load_points_of_interest(Rover):
+    Rover.POIs = [np.array((104.0, 189.0)), np.array((145.0, 94.0)), np.array((115.0, 11.0)),
+                  np.array((121, 51)), np.array((76.0, 72.0)), np.array((61.0, 102.0)),
+                  np.array((15.0, 97.0))]
+    for i in range(len(Rover.samples_pos[0])):
+        Rover.POIs.append(np.array((Rover.samples_pos[0][i], Rover.samples_pos[1][i])))
+
+
+# Rotate point list if we're not making progress, and remove nearby points
+def handle_points_of_interest(Rover):
+
+    if time.time() - Rover.last_removed_POI > 180:
+        print("We're stuck. Rotating points of interest list.")
+        Rover.last_removed_POI = time.time()
+        aux = Rover.POIs.pop(0)
+        Rover.POIs.append(aux)
+
+    # Remove points that are near our current position
+    i = 0
+    while i < len(Rover.POIs):
+        if norm(Rover.pos - Rover.POIs[i]) < 10:
+            print("Removing POI: {}".format(Rover.POIs[i]))
+            del Rover.POIs[i]
+            Rover.last_removed_POI = time.time()
+        else:  # only advance if we didn't delete a point
+            i += 1
+
 def decision_step(Rover):
     Rover.debug_txt = ''
-    Rover.sensors_txt = ''
+    Rover.sensors_txt = '{:.0f} | {:.0f}'.format(Rover.pos[0], Rover.pos[1])
     Rover.speed = np.abs(Rover.vel)
 
     if Rover.initial_pos is None:
         Rover.initial_pos = np.array(Rover.pos)
+        load_points_of_interest(Rover)
 
     # Check mission and emergency unlocking
     if finished_mission(Rover) or unlock_mechanism(Rover):
         return Rover
+
+    # If we're near a POI, no longer interested
+    handle_points_of_interest(Rover)
 
     # Check if we have vision data to make decisions with
     if len(Rover.nav_angles):
@@ -198,12 +229,17 @@ def decision_step(Rover):
                 target_angle, target_speed = go_towards_rock(Rover)
                 Rover.rock_seeking_counter -= 1
             else: 
+                # Make sure we visit all important places
+                n_places_to_visit = len(Rover.POIs)
+                if n_places_to_visit and n_places_to_visit < 4:
+                    target_angle = get_point_direction(Rover, Rover.POIs[0])
                 # Free navigation, prefer left and not visited places
-                if Rover.samples_to_find != Rover.samples_collected:
+                elif Rover.samples_to_find != Rover.samples_collected:
                     target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 4
                 # Found all rocks: RETURN HOME
                 else:
-                    target_angle = get_home_direction(Rover)
+                    target_angle = get_point_direction(Rover, Rover.initial_pos)
+                    Rover.dist_to_orig = norm(Rover.initial_pos - Rover.pos)
 
                 # We've got a destination, find a way and speed
                 target_angle, target_speed = go_towards_direction(Rover, target_angle)
