@@ -24,6 +24,7 @@ class RoverCamera():
         self.x_camera = self.width/2
         self.y_camera = self.height
         self.max_view_distance = rows/2
+        self.min_view_distance = 5
         self.view_mask = self.calculate_view_mask()
 
     def set_img_shape(self, rows, cols):
@@ -39,9 +40,10 @@ class RoverCamera():
         # mask by distance to the camera point
         xview, yview = view_mask.nonzero()
         distances_to_camera = np.sqrt((xview - self.x_camera)**2 + (yview - self.y_camera)**2)
-        away_mask = distances_to_camera > self.max_view_distance
+        distance_mask = (distances_to_camera > self.max_view_distance)\
+                        | (distances_to_camera <= self.min_view_distance)
         # filter by distance mask
-        view_mask[xview[away_mask], yview[away_mask]] = 0
+        view_mask[xview[distance_mask], yview[distance_mask]] = 0
         return view_mask
 
     @staticmethod

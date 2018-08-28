@@ -20,7 +20,7 @@ def get_nearest_object(Rover, target_angle, span=5):
     obstacles_ahead = Rover.obs_dists[target_mask]
     if len(obstacles_ahead) < 20:  # avoid false obstacles (e.g: wheel marks)
         return Rover.max_view_distance
-    return np.mean(get_n_min_values(obstacles_ahead, 30))
+    return np.mean(get_n_min_values(obstacles_ahead, 30)) - Rover.min_view_distance
 
 
 # Add two components of offsets to the target angle:
@@ -35,9 +35,9 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
-        offset = -8 * (margin / nearest_object_left) ** 2 # I'm very afraid of rocks!
+        offset = -3 * (margin / nearest_object_left) ** 2 # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        offset += 8 * (margin / nearest_object_right) ** 2
+        offset += 3 * (margin / nearest_object_right) ** 2
     target_angle += offset
     if offset:
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)

@@ -61,7 +61,8 @@ class RoverState():
         self.throttle_set = 0.6 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         self.vision_image = np.zeros((160, 320, 3), dtype=np.float) 
-        self.max_view_distance = self.vision_image.shape[0] / 2
+        self.max_view_distance = self.vision_image.shape[0] / 2  # keep same value in RoverCam
+        self.min_view_distance = 5  # keep same value in RoverCam
         self.nearest_object = self.max_view_distance
         self.worldmap = np.zeros((200, 200, 3), dtype=np.float) 
         self.samples_pos = None # To store the actual sample positions
