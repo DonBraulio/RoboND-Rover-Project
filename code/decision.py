@@ -42,20 +42,20 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     if offset:
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
 
-    # Avoid obstacles ahead: check if we have better navigability at left (prefer) or right
+    # Avoid obstacles ahead: check if we have better navigability at left or right (preferred)
     nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
     if nearest_object_target < margin:
         Rover.debug_txt += "C"
         nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
         nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
-        if nearest_object_left > margin:  # check left before right (preferred dir)
-            offset = 5 * (margin / nearest_object_target)
-            target_angle = target_angle + offset
-            Rover.debug_txt += " L: {:.0f} |".format(offset)
-        elif nearest_object_right > margin:
+        if nearest_object_right > margin:  # check right before (preferred dir)
             offset = - 5 * (margin / nearest_object_target)
             target_angle = target_angle + offset
             Rover.debug_txt += " R: {:.0f} |".format(offset)
+        elif nearest_object_left > margin:
+            offset = 5 * (margin / nearest_object_target)
+            target_angle = target_angle + offset
+            Rover.debug_txt += " L: {:.0f} |".format(offset)
     return np.clip(target_angle, -15, 15)
 
 
@@ -235,7 +235,7 @@ def decision_step(Rover):
                     target_angle = get_point_direction(Rover, Rover.POIs[0])
                 # Free navigation, prefer left and not visited places
                 elif Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 4
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) - 6
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = get_point_direction(Rover, Rover.initial_pos)
