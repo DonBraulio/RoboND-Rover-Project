@@ -144,6 +144,8 @@ def create_output_images(Rover):
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (100, 255, 100), 1)
       cv2.putText(map_add, Rover.debug_txt, (0, 170), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 100, 100), 1)
+      cv2.putText(map_add, Rover.pos_txt, (0, 190), 
+                  cv2.FONT_HERSHEY_COMPLEX, 0.4, (150, 150, 150), 1)
       # Convert map and vision image to base64 strings for sending to server
       pil_img = Image.fromarray(map_add.astype(np.uint8))
       buff = BytesIO()

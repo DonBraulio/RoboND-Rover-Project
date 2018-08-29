@@ -35,9 +35,9 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
-        offset = -3 * (margin / nearest_object_left) ** 2 # I'm very afraid of rocks!
+        offset = -6 * ((margin/2) / nearest_object_left) ** 2 # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        offset += 3 * (margin / nearest_object_right) ** 2
+        offset += 6 * ((margin/2) / nearest_object_right) ** 2
     target_angle += offset
     if offset:
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
@@ -83,14 +83,6 @@ def go_towards_rock(Rover):
         target_angle = Rover.last_seen_rock
         target_speed = 0
     return target_angle, target_speed
-
-
-def get_point_direction(Rover, target_point):
-    vector = target_point - np.array(Rover.pos)  # vector pointing to target_direction
-    vector[0] += 0 if np.abs(vector[0]) > 1e-6 else 1e-6  # avoid div by zero
-    vector_arg = (180 / np.pi) * np.arctan(vector[1]/vector[0])
-    vector_arg = vector_arg if vector[0] > 0 else -vector_arg
-    return get_steering_to(Rover, vector_arg)
 
 
 # Avoid obstacles and calculate speed (including STOP condition)
@@ -178,24 +170,42 @@ def load_points_of_interest(Rover):
         Rover.POIs.append(np.array((Rover.samples_pos[0][i], Rover.samples_pos[1][i])))
 
 
-# Rotate point list if we're not making progress, and remove nearby points
-def handle_points_of_interest(Rover):
-
-    if time.time() - Rover.last_removed_POI > 180:
-        print("We're stuck. Rotating points of interest list.")
-        Rover.last_removed_POI = time.time()
-        aux = Rover.POIs.pop(0)
-        Rover.POIs.append(aux)
-
-    # Remove points that are near our current position
+def handle_points_of_interest(Rover, poi_range):
+    # Put current nearest POI in index 0, and remove it when reached
     i = 0
+    min_dist = np.inf
     while i < len(Rover.POIs):
-        if norm(Rover.pos - Rover.POIs[i]) < 10:
-            print("Removing POI: {}".format(Rover.POIs[i]))
-            del Rover.POIs[i]
+        dist = norm(Rover.pos - Rover.POIs[i])
+        if dist < poi_range and dist < min_dist:
+            if dist < 5:
+                print("Reached POI: {}".format(Rover.POIs.pop(i)))
+                Rover.last_removed_POI = time.time()
+                continue  # don't increment i 
+            else:
+                if i != 0:
+                    pick = Rover.POIs.pop(i)
+                    Rover.POIs.insert(0, pick)
+                    print("Switched destination to nearest POI: {}".format(Rover.POIs[0]))
+                min_dist = dist
+        i += 1
+    near_some_poi = min_dist < np.inf
+    if near_some_poi:
+        if time.time() - Rover.last_removed_POI > 120:
+            print("We're stuck, removing nearest POI")
             Rover.last_removed_POI = time.time()
-        else:  # only advance if we didn't delete a point
-            i += 1
+            Rover.POIs.pop(0)
+    else:
+        Rover.last_removed_POI = time.time()
+    return near_some_poi
+
+
+def get_point_direction(Rover, target_point):
+    vector = target_point - np.array(Rover.pos)  # vector pointing to target_direction
+    vector[0] += 0 if np.abs(vector[0]) > 1e-6 else 1e-6  # avoid div by zero
+    vector_arg = (180 / np.pi) * np.arctan(vector[1]/vector[0])
+    vector_arg = vector_arg if vector[0] > 0 else -vector_arg
+    return get_steering_to(Rover, vector_arg)
+
 
 def decision_step(Rover):
     Rover.debug_txt = ''
@@ -209,9 +219,6 @@ def decision_step(Rover):
     # Check mission and emergency unlocking
     if finished_mission(Rover) or unlock_mechanism(Rover):
         return Rover
-
-    # If we're near a POI, no longer interested
-    handle_points_of_interest(Rover)
 
     # Check if we have vision data to make decisions with
     if len(Rover.nav_angles):
@@ -229,17 +236,19 @@ def decision_step(Rover):
                 target_angle, target_speed = go_towards_rock(Rover)
                 Rover.rock_seeking_counter -= 1
             else: 
-                # Make sure we visit all important places
-                n_places_to_visit = len(Rover.POIs)
-                if n_places_to_visit and n_places_to_visit < 4:
+                # If we're near a POI, go to it
+                if handle_points_of_interest(Rover, 50):
                     target_angle = get_point_direction(Rover, Rover.POIs[0])
-                # Free navigation, prefer left and not visited places
+                    Rover.pos_txt = "POI: {}".format(Rover.POIs[0])
+                # Free navigation, prefer not visited places
                 elif Rover.samples_to_find != Rover.samples_collected:
-                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) - 6
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators)
+                    Rover.pos_txt = "Free mode"
                 # Found all rocks: RETURN HOME
                 else:
                     target_angle = get_point_direction(Rover, Rover.initial_pos)
                     Rover.dist_to_orig = norm(Rover.initial_pos - Rover.pos)
+                    Rover.pos_txt = "Go Home ({})".format(Rover.dist_to_orig)
 
                 # We've got a destination, find a way and speed
                 target_angle, target_speed = go_towards_direction(Rover, target_angle)

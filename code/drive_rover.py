@@ -74,6 +74,7 @@ class RoverState():
         self.send_pickup = False # Set to True to trigger rock pickup
         self.debug_txt = ''
         self.sensors_txt = ''
+        self.pos_txt = ''
 
         # Navigation state vars
         self.speed = 0           # Absolute value of the velocity
