@@ -140,7 +140,7 @@ def create_output_images(Rover):
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
       cv2.putText(map_add,"  Collected: "+str(Rover.samples_collected), (0, 85), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
-      cv2.putText(map_add, Rover.sensors_txt, (0, 150), 
+      cv2.putText(map_add, Rover.mode_txt, (0, 150), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (100, 255, 100), 1)
       cv2.putText(map_add, Rover.debug_txt, (0, 170), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 100, 100), 1)

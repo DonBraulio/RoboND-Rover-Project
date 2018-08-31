@@ -34,12 +34,15 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     nearest_object_right = get_nearest_object(Rover, -20, 20)
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
-    if nearest_object_left < margin/2:
+    if nearest_object_left < margin:
         offset = -3 * ((margin/2) / nearest_object_left) ** 2 # I'm very afraid of rocks!
-    if nearest_object_right < margin/2:
+    if nearest_object_right < margin:
         offset += 3 * ((margin/2) / nearest_object_right) ** 2
     if offset:
-        target_angle = offset
+        if min(nearest_object_left, nearest_object_right) < margin/2:
+            target_angle = offset
+        else:
+            target_angle += offset
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
 
     # Avoid obstacles ahead: check if we have better navigability at left or right (preferred)
@@ -89,6 +92,7 @@ def go_towards_rock(Rover):
 # Avoid obstacles and calculate speed (including STOP condition)
 def go_towards_direction(Rover, preferred_direction):
     nearest_object_ahead = get_nearest_object(Rover, 0, 10)  # obstacle in narrow span ahead
+    Rover.pos_txt += "({:.0f})".format(nearest_object_ahead)
 
     target_speed = 0
     target_angle = add_obstacle_avoiding_offset(Rover, preferred_direction, 40)
@@ -108,7 +112,7 @@ def go_towards_direction(Rover, preferred_direction):
             print("Started steering...")
             Rover.last_steering = get_steering_to(Rover, Rover.last_nav_yaw)
         target_angle = -10 if Rover.last_steering < 0 else 10
-        Rover.steering = nearest_object_ahead < 30
+        Rover.steering = nearest_object_ahead < 25
     else:
         Rover.last_nav_yaw = Rover.yaw
         Rover.last_steering = None
@@ -136,20 +140,22 @@ def closed_boundary(Rover):
 
 def unlock_mechanism(Rover):
     # Lock watchdog increment
-    if (Rover.speed < 0.2 and not Rover.picking_up):
+    if (Rover.speed < 0.2 and not Rover.picking_up):  # count to enter lock mode
         Rover.locked_counter += 1
-    elif Rover.speed > 0.8:
+        Rover.locked_pos = np.array(Rover.pos)
+    elif Rover.locked_counter and norm(Rover.locked_pos - Rover.pos) > 2:  # exit lock mode
         Rover.locked_counter = 0
+
     # Count reached. Activate unlocking
-    if Rover.locked_counter > 400:
+    if Rover.locked_counter > 210:  # aprox 7 secs
         Rover.brake = 0
-        Rover.throttle = -5  # Phase 1: throttle backwards
-        Rover.steer = 5
-        if Rover.locked_counter > 500:  # Phase 2: steer
-            Rover.throttle = 0
-            Rover.steer = -15
-        if Rover.locked_counter > 600:  # Phase 3: try yielding control to visual navigation again
-            Rover.locked_counter = 300
+        Rover.throttle = 0  # Phase 1: steer
+        Rover.steer = 15 if (Rover.last_steering is None or Rover.last_steering > 0) else -15
+        if Rover.locked_counter > 240:  # Phase 2: throttle
+            Rover.throttle = Rover.throttle_set
+            Rover.steer = 0
+        if Rover.locked_counter > 270:  # Phase 3: try yielding control to visual navigation again
+            Rover.locked_counter = 180
         Rover.debug_txt += " UNLOCK!"
         return True
     return False
@@ -162,7 +168,7 @@ def finished_mission(Rover):
         Rover.brake = Rover.brake_set
         Rover.throttle = 0
         Rover.debug_txt = 'THE END'
-        Rover.pos_txt = 'Home sweet home'
+        Rover.mode_txt = 'Home sweet home'
         return True
     return False
 
@@ -236,7 +242,7 @@ def select_nav_mode(Rover):
 
 def decision_step(Rover):
     Rover.debug_txt = ''
-    Rover.sensors_txt = '{:.0f} | {:.0f}'.format(Rover.pos[0], Rover.pos[1])
+    Rover.pos_txt = '{:.0f} | {:.0f}'.format(Rover.pos[0], Rover.pos[1])
     Rover.speed = np.abs(Rover.vel)
 
     if Rover.initial_pos is None:
@@ -271,25 +277,25 @@ def decision_step(Rover):
         if Rover.nav_mode == Rover.NAV_TO_ROCK:
             target_angle, target_speed = go_towards_rock(Rover)
             Rover.rock_seeking_counter -= 1
-            Rover.pos_txt = "Pick Rock"
+            Rover.mode_txt = "Pick Rock"
 
         elif Rover.nav_mode == Rover.NAV_MEAN:
             target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators)
-            Rover.pos_txt = "Free Mode"
+            Rover.mode_txt = "Free Mode"
 
         elif Rover.nav_mode == Rover.NAV_BIAS_RIGHT:
             target_angle = np.mean(Rover.nav_angles) - 7
-            Rover.pos_txt = "Right Crawl"
+            Rover.mode_txt = "Right Crawl"
 
         elif Rover.nav_mode == Rover.NAV_POI:
             target_angle = get_point_direction(Rover, Rover.POIs[0])
-            Rover.pos_txt = "POI: {}".format(Rover.POIs[0])
+            Rover.mode_txt = "POI: {}".format(Rover.POIs[0])
 
         elif Rover.nav_mode == Rover.NAV_BACK_HOME:
             target_angle = get_point_direction(Rover, Rover.initial_pos)
-            Rover.pos_txt = "Go Home {}".format(Rover.dist_to_orig)
+            Rover.mode_txt = "Go Home {}".format(Rover.dist_to_orig)
 
-        Rover.pos_txt += " {:.0f}".format(100 * Rover.nav_mode_counter / (30*60))
+        Rover.mode_txt += " {:.0f}".format(100 * Rover.nav_mode_counter / (30*60))
 
         # We've got a destination, calculate speed if not set by nav_mode
         if target_speed is None:

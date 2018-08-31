@@ -79,7 +79,7 @@ class RoverState():
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
         self.debug_txt = ''
-        self.sensors_txt = ''
+        self.mode_txt = ''
         self.pos_txt = ''
 
         # Navigation state vars
@@ -96,6 +96,7 @@ class RoverState():
         self.recovering_rock = False    # recovering rock status
         self.seeing_rock = False
         self.initial_pos = None         # come back home after picking all rocks
+        self.locked_pos = None
         self.dist_to_orig = np.inf      # distance to initial_pos (only calc after picking all rocks)
 
 
