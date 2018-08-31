@@ -186,6 +186,11 @@ def perception_step(Rover):
 
     # only add points to worldmap when we've small pitch and roll
     if roll_err < 1.5 and pitch_err < 2.0:
+
+        # how new is this terrain being explored? low pass filter (iir moving avg)
+        if len(Rover.visited_ponderators):
+            Rover.visit_gain = (Rover.visit_gain * 199 + np.mean(Rover.visited_ponderators)) / 200
+
         sure_mask = dist < 30
         ypix_nav_sure = ypix_nav[sure_mask]
         xpix_nav_sure = xpix_nav[sure_mask]
@@ -219,14 +224,13 @@ def perception_step(Rover):
     ypix_img, xpix_img = nav_thres.nonzero()
     Rover.vision_image[ypix_img, xpix_img, 2] = 255 * Rover.visited_ponderators
 
-    # # Obstacle avoid: if we see an obstacle ahead, only see to the left
     if len(xpix_obs_rov):
         dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
         Rover.obs_dists = dist
         Rover.obs_angles = angles
 
     if len(xpix_rock_rov):
-        Rover.seeing_rock = True
+        Rover.seeing_rock = True  # shortcut
         dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
         Rover.rock_dists = dist
         Rover.rock_angles = angles

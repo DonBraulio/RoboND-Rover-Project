@@ -37,6 +37,11 @@ ground_truth_3d = np.dstack((ground_truth*0, ground_truth*255, ground_truth*0)).
 
 # Define RoverState() class to retain rover state parameters
 class RoverState():
+    NAV_MEAN = 'POND_MEAN'  # mean nav angle, ponderating better not-visited pixels
+    NAV_POI = 'POI'  # go towards Points Of Interest
+    NAV_BIAS_RIGHT = 'RIGHT'  # navigate with offset to the right
+    NAV_TO_ROCK = 'ROCK'  # rock nearby, pick it up
+    NAV_BACK_HOME = 'RETURN'  # Back to initial positioin
 
     def __init__(self):
         self.start_time = None # To record the start time of navigation
@@ -53,6 +58,7 @@ class RoverState():
         self.nav_angles = None # Angles of navigable terrain pixels
         self.nav_dists = None # Distances of navigable terrain pixels
         self.visited_ponderators = None # 1 if the pixel was not visited, tends to 0 as we see it
+        self.visit_gain = 1  # measure how new is our terrain
         self.rock_angles = None # Angles of navigable terrain pixels
         self.rock_dists = None # Distances of navigable terrain pixels
         self.obs_dists = None
@@ -77,6 +83,9 @@ class RoverState():
         self.pos_txt = ''
 
         # Navigation state vars
+        self.nav_mode = self.NAV_MEAN
+        self.prev_nav_mode = self.NAV_MEAN
+        self.nav_mode_counter = 0
         self.speed = 0           # Absolute value of the velocity
         self.rock_seeking_counter = 0   # persistence to find a lost rock
         self.locked_counter = 0         # detect locked vehicle
@@ -88,8 +97,6 @@ class RoverState():
         self.seeing_rock = False
         self.initial_pos = None         # come back home after picking all rocks
         self.dist_to_orig = np.inf      # distance to initial_pos (only calc after picking all rocks)
-        self.last_removed_POI = time.time()
-
 
 
 # Initialize our rover 
