@@ -158,6 +158,161 @@ def process_image(img):
 
 #### 1. Fill in the `perception_step()` (at the bottom of the `perception.py` script) and `decision_step()` (in `decision.py`) functions in the autonomous mapping scripts and an explanation is provided in the writeup of how and why these functions were modified as they were.
 
+Follows the whole `perception_step()` method that I ended up with.
+The main features to note here are:
+ - I defined a RoverCam class, which contains some static information about the camera, to avoid
+   recalculating it in each frame. Members of this class are:
+    - `perspect_M`: perspective transform matrix used by OpenCV (only calculated once)
+    - `view_mask`: allows filtering the rover `vision_image` to certain distance range, in which the
+      image is considered valid. Out of that range, image is not considered to make decisions about
+      navigation. The only exception is for the rocks channel.
+ - `worldmap` only gets updated if `pitch` and `roll` are below certain value
+ - The `vision_image` for navigation angles is showing `visited_ponderators` which is similar to
+   a mask but the value in each point is a fuzzy value in range `[0-1]`, where most visited places (pixels
+   already present in the minimap with high values) tend to 0. This is used in `decision.py` to ponderate the `nav_angles`, so that the resulting mean angle tends to prefer not visited places.
+ - The pixels added to the minimap are even more restricted in distance range, using the
+   `sure_mask`. This is obviously to improve fidelity.
+
+```python
+def perception_step(Rover):
+        # Set camera size (will update transform params only on change)
+    RoverCam.set_img_shape(Rover.img.shape[0], Rover.img.shape[1])
+        # Warp camera to map-view
+    warped = perspect_transform(Rover.img, RoverCam.perspective_M)
+        # Apply thresholds to detect navigable map and rocks first
+    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
+    rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
+    obstacles = np.abs(1 - nav_thres)*RoverCam.view_mask  # opossite to navigable terrain
+
+        # Calculate navigable pixel values in rover-centric coords
+    xpix_rov, ypix_rov = rover_coords(nav_thres)
+    xpix_obs_rov, ypix_obs_rov = rover_coords(obstacles)
+    xpix_rock_rov, ypix_rock_rov = rover_coords(rock_range)
+
+    dist, angles = to_polar_coords(xpix_rov, ypix_rov)
+    Rover.nav_dists = dist
+    Rover.nav_angles = angles
+
+    roll_err = np.abs(Rover.roll if Rover.roll < 180 else Rover.roll - 360)
+    pitch_err = np.abs(Rover.pitch if Rover.pitch < 180 else Rover.pitch - 360)
+
+        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
+    scale = 10
+        # Convert from rover-centric to worldmap coords
+    xpix_nav, ypix_nav = pix_to_world(xpix_rov, ypix_rov,
+                                      Rover.pos[0], Rover.pos[1],
+                                      Rover.yaw,
+                                      Rover.worldmap.shape[0],
+                                      scale)
+
+        # Visited places have lesser values [0.5, 1], this is used to ponderate a mean angle
+    Rover.visited_ponderators = (300 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 300
+
+    # only add points to worldmap when we've small pitch and roll
+    if roll_err < 1.5 and pitch_err < 2.0:
+        sure_mask = dist < 30
+        ypix_nav_sure = ypix_nav[sure_mask]
+        xpix_nav_sure = xpix_nav[sure_mask]
+        Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 10
+
+            # Repeat the transformation to show obstacles on the map
+        xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
+                                            Rover.pos[0], Rover.pos[1],
+                                            Rover.yaw,
+                                            Rover.worldmap.shape[0],
+                                            scale)
+        Rover.worldmap[ypix_obs, xpix_obs, 0] += 1
+            # Remove objects from any navigable zones
+        Rover.worldmap[Rover.worldmap[:, :, 2].nonzero(), 0] = 0
+
+            # Repeat the procedure to show rocks on the map
+        xpix_rock, ypix_rock = pix_to_world(xpix_rock_rov, ypix_rock_rov,
+                                            Rover.pos[0], Rover.pos[1],
+                                            Rover.yaw,
+                                            Rover.worldmap.shape[0],
+                                            scale)
+        Rover.worldmap[ypix_rock, xpix_rock, 1] += 1
+
+        Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
+
+    Rover.vision_image[:,:,0] = 255*obstacles
+    Rover.vision_image[:,:,1] = 255*rock_range
+
+    # Show the ponderators in the image
+    ypix_img, xpix_img = nav_thres.nonzero()
+    Rover.vision_image[ypix_img, xpix_img, 2] = 255 * Rover.visited_ponderators
+
+    # # Obstacle avoid: if we see an obstacle ahead, only see to the left
+    if len(xpix_obs_rov):
+        dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
+        Rover.obs_dists = dist
+        Rover.obs_angles = angles
+
+    if len(xpix_rock_rov):
+        Rover.seeing_rock = True
+        dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
+        Rover.rock_dists = dist
+        Rover.rock_angles = angles
+    else:
+        Rover.seeing_rock = False
+    
+    return Rover
+```
+
+Using 
+```python
+def decision_step(Rover):
+    Rover.debug_txt = ''
+    Rover.sensors_txt = ''
+    Rover.speed = np.abs(Rover.vel)
+
+    if Rover.initial_pos is None:
+        Rover.initial_pos = np.array(Rover.pos)
+
+    # Check mission and emergency unlocking
+    if finished_mission(Rover) or unlock_mechanism(Rover):
+        return Rover
+
+    # Check if we have vision data to make decisions with
+    if len(Rover.nav_angles):
+        # First priority: if we're near sample, brake and pick it up
+        if Rover.near_sample:
+            Rover.throttle = 0
+            Rover.brake = Rover.brake_set
+        else:
+            if Rover.seeing_rock:
+                Rover.rock_seeking_counter = 200
+                Rover.last_seen_rock = np.mean(Rover.rock_angles)
+
+            # Pursue a rock we just saw
+            if Rover.rock_seeking_counter:  # see the rock two frames
+                target_angle, target_speed = go_towards_rock(Rover)
+                Rover.rock_seeking_counter -= 1
+            else: 
+                # Free navigation, prefer left and not visited places
+                if Rover.samples_to_find != Rover.samples_collected:
+                    target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 8  # tend to left
+                # Found all rocks: RETURN HOME
+                else:
+                    target_angle = go_back_home(Rover)
+
+                # We've got a destination, find a way and speed
+                target_angle, target_speed = go_towards_direction(Rover, target_angle)
+
+            # Set throttle/brake/steer
+            set_rover_to(Rover, target_angle, target_speed)
+    else:
+        # if not nav_angles, just steer
+        set_rover_to(Rover, 15, 0)
+
+    # If in a state where want to pickup a rock send pickup command
+    if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
+        Rover.send_pickup = True
+        Rover.rock_seeking_counter = 0
+    
+    return Rover
+```
+
 
 #### 2. Launching in autonomous mode your rover can navigate and map autonomously.  Explain your results and how you might improve them in your writeup.  
 
