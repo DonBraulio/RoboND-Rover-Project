@@ -140,22 +140,25 @@ def closed_boundary(Rover):
 
 def unlock_mechanism(Rover):
     # Lock watchdog increment
-    if (Rover.speed < 0.2 and not Rover.picking_up):  # count to enter lock mode
+    if (Rover.speed < 0.2 and not Rover.picking_up and not Rover.steering):  # count to detect lock
         Rover.locked_counter += 1
         Rover.locked_pos = np.array(Rover.pos)
     elif Rover.locked_counter and norm(Rover.locked_pos - Rover.pos) > 2:  # exit lock mode
         Rover.locked_counter = 0
+    elif Rover.picking_up:
+        Rover.locked_counter = 0
 
     # Count reached. Activate unlocking
-    if Rover.locked_counter > 210:  # aprox 7 secs
+    if Rover.locked_counter > 150:  # 1 sec ~ 30 secs
         Rover.brake = 0
-        Rover.throttle = 0  # Phase 1: steer
-        Rover.steer = 15 if (Rover.last_steering is None or Rover.last_steering > 0) else -15
-        if Rover.locked_counter > 240:  # Phase 2: throttle
-            Rover.throttle = Rover.throttle_set
-            Rover.steer = 0
-        if Rover.locked_counter > 270:  # Phase 3: try yielding control to visual navigation again
-            Rover.locked_counter = 180
+        Rover.throttle = -Rover.throttle_set  # Phase 1: reverse
+        Rover.steer = 0
+        if Rover.locked_counter > 210:  # Phase 2: rotate
+            Rover.brake = 0
+            Rover.throttle = 0
+            Rover.steer = 90
+        if Rover.locked_counter > 240:  # Phase 3: try yielding control to visual navigation again
+            Rover.locked_counter = 0
         Rover.debug_txt += " UNLOCK!"
         return True
     return False
@@ -175,7 +178,7 @@ def finished_mission(Rover):
 
 def load_points_of_interest(Rover):
     Rover.POIs = [np.array((104.0, 189.0)), np.array((145.0, 94.0)), np.array((115.0, 11.0)),
-                  np.array((121, 51)), np.array((76.0, 72.0)), np.array((61.0, 102.0)),
+                  np.array((76.0, 72.0)), np.array((61.0, 102.0)),
                   np.array((15.0, 97.0))]
     for i in range(len(Rover.samples_pos[0])):
         Rover.POIs.append(np.array((Rover.samples_pos[0][i], Rover.samples_pos[1][i])))
@@ -214,10 +217,10 @@ def select_nav_mode(Rover):
     Rover.prev_nav_mode = Rover.nav_mode
 
     # Force POI mode when we're near one, to go there and remove it
-    if nearest_point_of_interest(Rover) < 10:
-        Rover.nav_mode = Rover.NAV_POI
+    # if nearest_point_of_interest(Rover) < 10:
+    #     Rover.nav_mode = Rover.NAV_POI
     # Restart in NAV_MEAN mode after picking rocks, to better explore map
-    elif Rover.nav_mode == Rover.NAV_TO_ROCK:
+    if Rover.nav_mode == Rover.NAV_TO_ROCK:
         Rover.nav_mode = Rover.NAV_MEAN
 
     # Switch mode on timeout
@@ -226,10 +229,10 @@ def select_nav_mode(Rover):
                 and Rover.nav_mode != Rover.NAV_BACK_HOME:  # switch to other modes if stuck
             Rover.nav_mode = Rover.NAV_BACK_HOME
         elif Rover.nav_mode == Rover.NAV_MEAN:
-            Rover.nav_mode = Rover.NAV_BIAS_RIGHT
-        elif Rover.nav_mode == Rover.NAV_BIAS_RIGHT:
-            Rover.nav_mode = Rover.NAV_POI
-        elif Rover.nav_mode == Rover.NAV_POI:
+            Rover.nav_mode = Rover.NAV_BIAS_LEFT
+        elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
+        #     Rover.nav_mode = Rover.NAV_POI
+        # elif Rover.nav_mode == Rover.NAV_POI:
             Rover.nav_mode = Rover.NAV_MEAN
 
     # count how much time we spend in a mode, without exploring new terrain
@@ -283,9 +286,9 @@ def decision_step(Rover):
             target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators)
             Rover.mode_txt = "Free Mode"
 
-        elif Rover.nav_mode == Rover.NAV_BIAS_RIGHT:
-            target_angle = np.mean(Rover.nav_angles) - 7
-            Rover.mode_txt = "Right Crawl"
+        elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
+            target_angle = np.mean(Rover.nav_angles) + 7
+            Rover.mode_txt = "Left Crawl"
 
         elif Rover.nav_mode == Rover.NAV_POI:
             target_angle = get_point_direction(Rover, Rover.POIs[0])
