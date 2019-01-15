@@ -35,9 +35,9 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
-        offset = -3 * (margin / nearest_object_left) ** 2 # I'm very afraid of rocks!
+        offset = -3 * ((margin/2) / nearest_object_left) ** 2 # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        offset += 3 * (margin / nearest_object_right) ** 2
+        offset += 3 * ((margin/2) / nearest_object_right) ** 2
     if offset:
         if min(nearest_object_left, nearest_object_right) < margin/2:
             target_angle = offset
@@ -98,9 +98,9 @@ def go_towards_direction(Rover, preferred_direction):
     if not target_speed:
         if Rover.steering_dir is None:
             print("Started steering...")
-            # steer back to navigate dir 3/4 of the times
+            # steer back to navigate dir 4/5 of the times (avoid deterministic locking)
             Rover.steering_dir = get_steering_to(Rover, Rover.last_nav_yaw)\
-                                 * np.random.choice([1, 1, 1, -1])
+                                 * np.random.choice(4 * [1] + [-1])
         target_angle = (-10 if Rover.steering_dir < 0 else 10)
         Rover.steering = nearest_object_ahead < 25
     else:
@@ -187,10 +187,7 @@ def select_nav_mode(Rover):
         if Rover.samples_collected == Rover.samples_to_find\
                 and Rover.nav_mode != Rover.NAV_BACK_HOME:
             Rover.nav_mode = Rover.NAV_BACK_HOME  # will enter here at least 1 min after finishing
-        elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
-            Rover.nav_mode = Rover.NAV_MEAN
-        elif Rover.nav_mode == Rover.NAV_MEAN:
-            Rover.nav_mode = Rover.NAV_BIAS_LEFT
+        # Other modes removed
 
     # count how much time we spend in a mode, without exploring new terrain
     if Rover.nav_mode == Rover.prev_nav_mode and Rover.visit_gain < 0.2:
@@ -238,12 +235,8 @@ def decision_step(Rover):
             Rover.rock_seeking_counter -= 1
             Rover.mode_txt = "Pick Rock"
 
-        elif Rover.nav_mode == Rover.NAV_MEAN:
-            target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators)
-            Rover.mode_txt = "Free Mode"
-
         elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
-            target_angle = np.mean(Rover.nav_angles) + 9
+            target_angle = np.mean(Rover.nav_angles * Rover.visited_ponderators) + 7
             Rover.mode_txt = "Left Crawl"
 
         elif Rover.nav_mode == Rover.NAV_BACK_HOME:

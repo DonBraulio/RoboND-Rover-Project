@@ -37,8 +37,6 @@ ground_truth_3d = np.dstack((ground_truth*0, ground_truth*255, ground_truth*0)).
 
 # Define RoverState() class to retain rover state parameters
 class RoverState():
-    NAV_MEAN = 'POND_MEAN'  # mean nav angle, ponderating better not-visited pixels
-    NAV_POI = 'POI'  # go towards Points Of Interest
     NAV_BIAS_LEFT = 'LEFT'  # navigate with offset to the LEFT
     NAV_TO_ROCK = 'ROCK'  # rock nearby, pick it up
     NAV_BACK_HOME = 'RETURN'  # Back to initial positioin
