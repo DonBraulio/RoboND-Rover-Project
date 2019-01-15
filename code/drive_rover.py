@@ -83,8 +83,8 @@ class RoverState():
         self.pos_txt = ''
 
         # Navigation state vars
-        self.nav_mode = self.NAV_MEAN
-        self.prev_nav_mode = self.NAV_MEAN
+        self.nav_mode = self.NAV_BIAS_LEFT
+        self.prev_nav_mode = self.NAV_BIAS_LEFT
         self.nav_mode_counter = 0
         self.speed = 0           # Absolute value of the velocity
         self.rock_seeking_counter = 0   # persistence to find a lost rock

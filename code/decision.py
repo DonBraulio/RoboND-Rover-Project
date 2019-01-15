@@ -35,9 +35,9 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
     Rover.debug_txt += "L: {:.0f} R: {:.0f}".format(nearest_object_left, nearest_object_right)
     offset = 0
     if nearest_object_left < margin:
-        offset = -3 * ((margin/2) / nearest_object_left) ** 2 # I'm very afraid of rocks!
+        offset = -3 * (margin / nearest_object_left) ** 2 # I'm very afraid of rocks!
     if nearest_object_right < margin:
-        offset += 3 * ((margin/2) / nearest_object_right) ** 2
+        offset += 3 * (margin / nearest_object_right) ** 2
     if offset:
         if min(nearest_object_left, nearest_object_right) < margin/2:
             target_angle = offset
@@ -45,23 +45,11 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
             target_angle += offset
         Rover.debug_txt += " {} {:.0f} | ".format('<<' if offset > 0 else '>>', offset)
 
-    # Avoid obstacles ahead: check if we have better navigability at left or right (preferred)
-    # nearest_object_target = get_nearest_object(Rover, target_angle, 10)  # never is zero
-    # if nearest_object_target < margin:
-    #     Rover.debug_txt += "C"
-    #     nearest_object_left = get_nearest_object(Rover, target_angle + 15, 5)
-    #     nearest_object_right = get_nearest_object(Rover, target_angle - 15, 5)
-    #     if nearest_object_right > margin:  # check right before (preferred dir)
-    #         offset = - 5 * (margin / nearest_object_target)
-    #         target_angle = target_angle + offset
-    #         Rover.debug_txt += " R: {:.0f} |".format(offset)
-    #     elif nearest_object_left > margin:
-    #         offset = 5 * (margin / nearest_object_target)
-    #         target_angle = target_angle + offset
-    #         Rover.debug_txt += " L: {:.0f} |".format(offset)
     return np.clip(target_angle, -15, 15)
 
 
+# Given a target yaw to reach a destination, get the steering in
+# between -15 and 15. Avoid switching at 180 cause it gets unstable
 def get_steering_to(Rover, target_direction):
     err = Rover.yaw - target_direction
     while err > 180:
@@ -98,7 +86,7 @@ def go_towards_direction(Rover, preferred_direction):
     target_angle = add_obstacle_avoiding_offset(Rover, preferred_direction, 40)
     deviation = np.abs(target_angle)
     if not closed_boundary(Rover) and not Rover.steering and nearest_object_ahead > 15:
-        if deviation >= 14:
+        if deviation >= 14:  # hard curve, fix to low speed
             target_speed = 1
         else:
             target_speed = 4 * min(nearest_object_ahead / 40, 15 / deviation)
@@ -108,14 +96,16 @@ def go_towards_direction(Rover, preferred_direction):
 
     # Steer on null speed
     if not target_speed:
-        if Rover.last_steering is None:
+        if Rover.steering_dir is None:
             print("Started steering...")
-            Rover.last_steering = get_steering_to(Rover, Rover.last_nav_yaw)
-        target_angle = -10 if Rover.last_steering < 0 else 10
+            # steer back to navigate dir 3/4 of the times
+            Rover.steering_dir = get_steering_to(Rover, Rover.last_nav_yaw)\
+                                 * np.random.choice([1, 1, 1, -1])
+        target_angle = (-10 if Rover.steering_dir < 0 else 10)
         Rover.steering = nearest_object_ahead < 25
     else:
         Rover.last_nav_yaw = Rover.yaw
-        Rover.last_steering = None
+        Rover.steering_dir = None
     return target_angle, target_speed
 
 
@@ -176,39 +166,11 @@ def finished_mission(Rover):
     return False
 
 
-def load_points_of_interest(Rover):
-    Rover.POIs = [np.array((104.0, 189.0)), np.array((145.0, 94.0)), np.array((115.0, 11.0)),
-                  np.array((76.0, 72.0)), np.array((61.0, 102.0)),
-                  np.array((15.0, 97.0))]
-    for i in range(len(Rover.samples_pos[0])):
-        Rover.POIs.append(np.array((Rover.samples_pos[0][i], Rover.samples_pos[1][i])))
-
-
-def nearest_point_of_interest(Rover):
-    # Put current nearest POI in index 0, and remove it when reached
-    i = 0
-    min_dist = np.inf
-    while i < len(Rover.POIs):
-        dist = norm(Rover.pos - Rover.POIs[i])
-        if dist < min_dist:
-            if dist < 5:  # Remove and don't increment i
-                print("Reached POI: {}".format(Rover.POIs.pop(i)))
-                continue
-            else:
-                if i != 0:
-                    pick = Rover.POIs.pop(i)
-                    Rover.POIs.insert(0, pick)
-                    print("Switched nearest POI: {}".format(Rover.POIs[0]))
-                min_dist = dist
-        i += 1
-    return min_dist
-
-
 def get_point_direction(Rover, target_point):
     vector = target_point - np.array(Rover.pos)  # vector pointing to target_direction
     vector[0] += 0 if np.abs(vector[0]) > 1e-6 else 1e-6  # avoid div by zero
     vector_arg = (180 / np.pi) * np.arctan(vector[1]/vector[0])
-    vector_arg = vector_arg if vector[0] > 0 else -vector_arg
+    vector_arg = vector_arg if vector[0] > 0 else 180 + vector_arg
     return get_steering_to(Rover, vector_arg)
 
 
@@ -216,27 +178,22 @@ def get_point_direction(Rover, target_point):
 def select_nav_mode(Rover):
     Rover.prev_nav_mode = Rover.nav_mode
 
-    # Force POI mode when we're near one, to go there and remove it
-    # if nearest_point_of_interest(Rover) < 10:
-    #     Rover.nav_mode = Rover.NAV_POI
-    # Restart in NAV_MEAN mode after picking rocks, to better explore map
+    # Restart in NAV_LEFT mode after picking rocks
     if Rover.nav_mode == Rover.NAV_TO_ROCK:
-        Rover.nav_mode = Rover.NAV_MEAN
+        Rover.nav_mode = Rover.NAV_BIAS_LEFT
 
     # Switch mode on timeout
-    if Rover.nav_mode_counter > 30 * 80:  # aprox 1 minute frames
+    if Rover.nav_mode_counter > 30 * 60:  # aprox 30 frames/second
         if Rover.samples_collected == Rover.samples_to_find\
-                and Rover.nav_mode != Rover.NAV_BACK_HOME:  # switch to other modes if stuck
-            Rover.nav_mode = Rover.NAV_BACK_HOME
+                and Rover.nav_mode != Rover.NAV_BACK_HOME:
+            Rover.nav_mode = Rover.NAV_BACK_HOME  # will enter here at least 1 min after finishing
+        elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
+            Rover.nav_mode = Rover.NAV_MEAN
         elif Rover.nav_mode == Rover.NAV_MEAN:
             Rover.nav_mode = Rover.NAV_BIAS_LEFT
-        elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
-        #     Rover.nav_mode = Rover.NAV_POI
-        # elif Rover.nav_mode == Rover.NAV_POI:
-            Rover.nav_mode = Rover.NAV_MEAN
 
     # count how much time we spend in a mode, without exploring new terrain
-    if Rover.nav_mode == Rover.prev_nav_mode and Rover.visit_gain < 0.4:
+    if Rover.nav_mode == Rover.prev_nav_mode and Rover.visit_gain < 0.2:
         Rover.nav_mode_counter += 1
     else:
         Rover.nav_mode_counter = 0
@@ -250,7 +207,6 @@ def decision_step(Rover):
 
     if Rover.initial_pos is None:
         Rover.initial_pos = np.array(Rover.pos)
-        load_points_of_interest(Rover)
 
     # Check mission and emergency unlocking
     if finished_mission(Rover) or unlock_mechanism(Rover):
@@ -287,12 +243,8 @@ def decision_step(Rover):
             Rover.mode_txt = "Free Mode"
 
         elif Rover.nav_mode == Rover.NAV_BIAS_LEFT:
-            target_angle = np.mean(Rover.nav_angles) + 7
+            target_angle = np.mean(Rover.nav_angles) + 9
             Rover.mode_txt = "Left Crawl"
-
-        elif Rover.nav_mode == Rover.NAV_POI:
-            target_angle = get_point_direction(Rover, Rover.POIs[0])
-            Rover.mode_txt = "POI: {}".format(Rover.POIs[0])
 
         elif Rover.nav_mode == Rover.NAV_BACK_HOME:
             target_angle = get_point_direction(Rover, Rover.initial_pos)
