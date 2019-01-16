@@ -151,38 +151,44 @@ def perspect_transform(img, M):
 
 # Apply the above functions in succession and update the Rover state accordingly
 def perception_step(Rover):
-        # Set camera size (will update transform params only on change)
+    # Set camera size (will update transform params only on change)
     RoverCam.set_img_shape(Rover.img.shape[0], Rover.img.shape[1])
-        # Warp camera to map-view
+
+    # Warp camera to map-view
     warped = perspect_transform(Rover.img, RoverCam.perspective_M)
-        # Apply thresholds to detect navigable map and rocks first
+
+    # Apply thresholds to detect navigable map and rocks first
     nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
     rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
     obstacles = np.abs(1 - nav_thres) * RoverCam.view_mask  # opossite to navigable terrain
 
-        # Calculate navigable pixel values in rover-centric coords
+    # Calculate navigable pixel values in rover-centric coords
     xpix_rov, ypix_rov = rover_coords(nav_thres)
     xpix_obs_rov, ypix_obs_rov = rover_coords(obstacles)
     xpix_rock_rov, ypix_rock_rov = rover_coords(rock_range)
 
+    # Make sure we have some navigable terrain to process
     if len(xpix_rov) > 1:
+
+        # Navigable pixels distances and angles
         dist, angles = to_polar_coords(xpix_rov, ypix_rov)
         Rover.nav_dists = dist
         Rover.nav_angles = angles
 
+        # Calculate pitch and roll deviations (avoid jump from 0-360)
         roll_err = np.abs(Rover.roll if Rover.roll < 180 else Rover.roll - 360)
         pitch_err = np.abs(Rover.pitch if Rover.pitch < 180 else Rover.pitch - 360)
 
-            # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
+        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
         scale = 10
-            # Convert from rover-centric to worldmap coords
+        # Convert from rover-centric to worldmap coords
         xpix_nav, ypix_nav = pix_to_world(xpix_rov, ypix_rov,
                                           Rover.pos[0], Rover.pos[1],
                                           Rover.yaw,
                                           Rover.worldmap.shape[0],
                                           scale)
 
-            # Visited places have lesser values [0, 1], this is used to ponderate mean angle
+        # Visited places have lesser values [0, 1], this is used to ponderate mean angle
         Rover.visited_ponderators = (260 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 260
 
         # only add points to worldmap when we've small pitch and roll
@@ -191,22 +197,23 @@ def perception_step(Rover):
             # how new is this terrain being explored? low pass filter (iir moving avg)
             Rover.visit_gain = (Rover.visit_gain * 199 + np.mean(Rover.visited_ponderators)) / 200
 
+            # Update minimap only for nearby pixels
             sure_mask = dist < 30
             ypix_nav_sure = ypix_nav[sure_mask]
             xpix_nav_sure = xpix_nav[sure_mask]
             Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 10
 
-                # Repeat the transformation to show obstacles on the map
+            # Repeat the transformation to show obstacles on the map
             xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
                                                 Rover.pos[0], Rover.pos[1],
                                                 Rover.yaw,
                                                 Rover.worldmap.shape[0],
                                                 scale)
             Rover.worldmap[ypix_obs, xpix_obs, 0] += 1
-                # Remove objects from any navigable zones
+            # Remove objects from any navigable zones
             Rover.worldmap[Rover.worldmap[:, :, 2].nonzero(), 0] = 0
 
-                # Repeat the procedure to show rocks on the map
+            # Repeat the procedure to show rocks on the map
             xpix_rock, ypix_rock = pix_to_world(xpix_rock_rov, ypix_rock_rov,
                                                 Rover.pos[0], Rover.pos[1],
                                                 Rover.yaw,
@@ -214,13 +221,14 @@ def perception_step(Rover):
                                                 scale)
             Rover.worldmap[ypix_rock, xpix_rock, 1] += 1
 
+            # Clip all channels to [0-255]
             Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
 
         Rover.vision_image[:,:,0] = 255 * obstacles
         # Rover.vision_image[:,:,2] = 255*nav_thres
         Rover.vision_image[:,:,1] = 255 * rock_range
 
-        # Show the ponderators in the image
+        # Show the ponderators in the image (dark zones are already visited)
         ypix_img, xpix_img = nav_thres.nonzero()
         Rover.vision_image[ypix_img, xpix_img, 2] = 255 * Rover.visited_ponderators
 

@@ -202,6 +202,7 @@ def decision_step(Rover):
     Rover.pos_txt = '{:.0f} | {:.0f}'.format(Rover.pos[0], Rover.pos[1])
     Rover.speed = np.abs(Rover.vel)
 
+    # Only first frame: save initial position to come back after mission ends
     if Rover.initial_pos is None:
         Rover.initial_pos = np.array(Rover.pos)
 
@@ -253,4 +254,3 @@ def decision_step(Rover):
         set_rover_to(Rover, target_angle, target_speed)
 
     return Rover
-

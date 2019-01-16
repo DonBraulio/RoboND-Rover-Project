@@ -3,6 +3,9 @@
 [![Udacity - Robotics NanoDegree Program](https://s3-us-west-1.amazonaws.com/udacity-robotics/Extra+Images/RoboND_flag.png)](https://www.udacity.com/robotics)
 # Search and Sample Return Project
 
+**NOTE:** *Please refer to the [code folder](code/) and check the README to see my actual implementation of
+this project and how I addressed the rubric points. This one is just the default README file of the
+forked repository.*
 
 ![alt text][image_0] 
 
