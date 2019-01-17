@@ -1,261 +1,6 @@
 # Writeup: Search and Sample Return Project
 
-## Notebook Analysis
-### Color detection functions
-
-These are the functions that used to identify navigable terrain and rocks.
-For navigable terrain the function `color_thresh()` was used as developed during the course.
-For rock selection, I defined a new function `color_range()` that allows lower and upper thresholds
-for each RGB channel.
-
-```python
-# Select pixels whose RGB values are below each corresponding threshold (used for navigable terrain)
-def color_thresh(img, rgb_thresh=(180, 160, 150)):
-    # Create an array of zeros same xy size as img, but single channel
-    color_select = np.zeros_like(img[:,:,0])
-    # Require that each pixel be above all three threshold values in RGB
-    # above_thresh will now contain a boolean array with "True"
-    # where threshold was met
-    above_thresh = (img[:,:,0] > rgb_thresh[0]) \
-                & (img[:,:,1] > rgb_thresh[1]) \
-                & (img[:,:,2] > rgb_thresh[2])
-    # Index the array of zeros with the boolean array and set to 1
-    color_select[above_thresh] = 1
-    # Return the binary image
-    return color_select
-
-
-# Pick colors which RGB values are all between their given ranges (used for rocks)
-def color_range(img, rgb_range=((150, 170), (150, 170), (150, 170))):
-    # Create an array of zeros same xy size as img, but single channel
-    color_select = np.zeros_like(img[:,:,0])
-    
-    in_range = (img[:,:,0] >= rgb_range[0][0]) & (img[:,:,0] <= rgb_range[0][1])\
-               & (img[:,:,1] >= rgb_range[1][0]) & (img[:,:,1] <= rgb_range[1][1])\
-               & (img[:,:,2] >= rgb_range[2][0]) & (img[:,:,2] <= rgb_range[2][1])
-    # Index the array of zeros with the boolean array and set to 1
-    color_select[in_range] = 1
-    # Return the binary image
-    return color_select
-```
-
-In the image below it can be seen these functions in action for various sample images.
-Note that the rock is detected even when it's very far away, although only one pixel passes through
-the filter.
-
-Also note that next to the rock, the terrain is not identified as navigable. When approaching rocks,
-the navigation mode changes to allow going towards a rock even if it's isolated by non-navigable
-terrain. This change of mode was necessary because otherwise the car would hit walls when no rocks
-were near, or it would never reach rocks that sometimes are located in very tricky places.
-
-![Functions tested with sample images](../w_imgs/ranged_images.png)
-
-### Image processing applied to navigation sequence 
-
-Here is the version of `process_image()` used in the notebook. The version used in `perception.py`
-has some further selection to avoid mapping terrain when the pitch and roll angles are not adequate
-and such.
-
-```python
-def rover_cam_to_map_view_coords(dst_img):
-    # Get source and destination squares to transform image from rover camera
-    # perspective, to a map view perspective.
-    dst_size = 5
-    bottom_offset = 6
-    source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
-    destination = np.float32([
-            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - bottom_offset],
-            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - bottom_offset],
-            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
-            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
-            ])
-    return source, destination
-
-def process_image(img):
-    # From each img, generate a mosaic with 3 sub-images:
-    #  - copy of input img
-    #  - warped img converted from rover-POV to map-view
-    #  - ground truth map overlayed with navigable map and yellow rocks found
-
-        # Warp camera to map-view
-    source, destination = rover_cam_to_map_view_coords(img)
-    warped = perspect_transform(img, source, destination)
-        # Apply thresholds to detect navigable map and rocks first
-    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150))
-    rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
-
-        # Calculate navigable pixel values in rover-centric coords
-    xpix_nav, ypix_nav = rover_coords(nav_thres)
-        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
-    scale = 10
-        # Convert from rover-centric to worldmap coords
-    xpix_nav, ypix_nav = pix_to_world(xpix_nav, ypix_nav,
-                                      data.xpos[data.count], data.ypos[data.count],
-                                      data.yaw[data.count],
-                                      data.worldmap.shape[0],
-                                      scale)
-    data.worldmap[ypix_nav, xpix_nav, :] = 50  # paint grey
-
-        # Repeat the procedure to show rocks on the map
-    xpix_rock, ypix_rock = rover_coords(rock_range)
-    xpix_rock, ypix_rock = pix_to_world(xpix_rock, ypix_rock,
-                                        data.xpos[data.count], data.ypos[data.count],
-                                        data.yaw[data.count],
-                                        data.worldmap.shape[0],
-                                        scale)
-    data.worldmap[ypix_rock, xpix_rock] = (255, 0, 0)  # paint red
-
-        # First create a blank image (can be whatever shape you like)
-    output_image = np.zeros((img.shape[0] + data.worldmap.shape[0], img.shape[1]*2, 3))
-    
-        # Top left image: original
-    output_image[0:img.shape[0], 0:img.shape[1]] = img
-    
-        # Top right image: Overlay warped with detected thresholds and rocks
-    # warped_percept = np.zeros_like(warped)
-    # warped_percept[nav_thres] = (0, 255, 255)
-    # warped_percept[rock_range] = (255, 0, 0)
-    # warped = cv2.addWeighted(warped, 1, warped_percept, 1, 0)  # comment this line to avoid overlay
-    output_image[0:img.shape[0], img.shape[1]:] = warped
-
-        # Bottom left: Overlay worldmap with ground truth map
-    map_add = cv2.addWeighted(data.worldmap, 1, data.ground_truth, 0.2, 0)
-        # Flip map overlay so y-axis points upward and add to output_image 
-    output_image[img.shape[0]:, 0:map_add.shape[1]] = np.flipud(map_add)
-    
-        # Bottom right: Unused for now
-
-    data.count += 1 # Keep track of the index in the Databucket()
-    
-    return output_image
-```
-
-The video created after applying this processing to the given sequence of images, is in [this
-file](../output/test_mapping.mp4)
-
 ## Autonomous Navigation and Mapping
-
-### Perception processing step
-
-Included here is only the step method, not the helper functions and classes (like `RoverCam`) which
-can be seen in the same source code file `perception.py`.
-
-The main features to note in the following `perception_step()` function are:
- - I defined a RoverCam class, which contains some static information about the camera, to avoid
-   recalculating it in each frame. Members of this class are:
-    - `perspect_M`: perspective transform matrix used by OpenCV (only calculated once)
-    - `view_mask`: allows filtering the rover `vision_image` to certain distance range, in which the
-      image is considered valid. Out of that range, image is not considered to make decisions about
-      navigation. The only exception is for the rocks channel, since we want to see rocks from as
-      far away as possible.
- - `worldmap` only gets updated if `pitch` and `roll` are below certain value
- - The `vision_image` for navigation angles is showing `visited_ponderators` which is similar to
-   a mask but the value in each point is a fuzzy value in range `[0-1]`, where most visited places
-   (pixels already present in the minimap with high values) tend to 0.
-   This is used in `decision.py` to ponderate the `nav_angles`, so that the resulting mean angle
-   tends to prefer not visited places.
- - The pixels added to the minimap are even more restricted in distance range, using the
-   `sure_mask`. This is obviously to improve fidelity.
-
-```python
-def perception_step(Rover):
-    # Set camera size (will update transform params only on change)
-    RoverCam.set_img_shape(Rover.img.shape[0], Rover.img.shape[1])
-
-    # Warp camera to map-view
-    warped = perspect_transform(Rover.img, RoverCam.perspective_M)
-
-    # Apply thresholds to detect navigable map and rocks first
-    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
-    rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
-    obstacles = np.abs(1 - nav_thres) * RoverCam.view_mask  # opossite to navigable terrain
-
-    # Calculate navigable pixel values in rover-centric coords
-    xpix_rov, ypix_rov = rover_coords(nav_thres)
-    xpix_obs_rov, ypix_obs_rov = rover_coords(obstacles)
-    xpix_rock_rov, ypix_rock_rov = rover_coords(rock_range)
-
-    # Make sure we have some navigable terrain to process
-    if len(xpix_rov) > 1:
-
-        # Navigable pixels distances and angles
-        dist, angles = to_polar_coords(xpix_rov, ypix_rov)
-        Rover.nav_dists = dist
-        Rover.nav_angles = angles
-
-        # Calculate pitch and roll deviations (avoid jump from 0-360)
-        roll_err = np.abs(Rover.roll if Rover.roll < 180 else Rover.roll - 360)
-        pitch_err = np.abs(Rover.pitch if Rover.pitch < 180 else Rover.pitch - 360)
-
-        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
-        scale = 10
-        # Convert from rover-centric to worldmap coords
-        xpix_nav, ypix_nav = pix_to_world(xpix_rov, ypix_rov,
-                                          Rover.pos[0], Rover.pos[1],
-                                          Rover.yaw,
-                                          Rover.worldmap.shape[0],
-                                          scale)
-
-        # Visited places have lesser values [0, 1], this is used to ponderate mean angle
-        Rover.visited_ponderators = (260 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 260
-
-        # only add points to worldmap when we've small pitch and roll
-        if roll_err < 1.5 and pitch_err < 2.0:
-
-            # how new is this terrain being explored? low pass filter (iir moving avg)
-            Rover.visit_gain = (Rover.visit_gain * 199 + np.mean(Rover.visited_ponderators)) / 200
-
-            # Update minimap only for nearby pixels
-            sure_mask = dist < 30
-            ypix_nav_sure = ypix_nav[sure_mask]
-            xpix_nav_sure = xpix_nav[sure_mask]
-            Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 10
-
-            # Repeat the transformation to show obstacles on the map
-            xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
-                                                Rover.pos[0], Rover.pos[1],
-                                                Rover.yaw,
-                                                Rover.worldmap.shape[0],
-                                                scale)
-            Rover.worldmap[ypix_obs, xpix_obs, 0] += 1
-            # Remove objects from any navigable zones
-            Rover.worldmap[Rover.worldmap[:, :, 2].nonzero(), 0] = 0
-
-            # Repeat the procedure to show rocks on the map
-            xpix_rock, ypix_rock = pix_to_world(xpix_rock_rov, ypix_rock_rov,
-                                                Rover.pos[0], Rover.pos[1],
-                                                Rover.yaw,
-                                                Rover.worldmap.shape[0],
-                                                scale)
-            Rover.worldmap[ypix_rock, xpix_rock, 1] += 1
-
-            # Clip all channels to [0-255]
-            Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
-
-        Rover.vision_image[:,:,0] = 255 * obstacles
-        # Rover.vision_image[:,:,2] = 255*nav_thres
-        Rover.vision_image[:,:,1] = 255 * rock_range
-
-        # Show the ponderators in the image (dark zones are already visited)
-        ypix_img, xpix_img = nav_thres.nonzero()
-        Rover.vision_image[ypix_img, xpix_img, 2] = 255 * Rover.visited_ponderators
-
-    if len(xpix_obs_rov):
-        dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
-        Rover.obs_dists = dist
-        Rover.obs_angles = angles
-
-    if len(xpix_rock_rov):
-        Rover.seeing_rock = True  # shortcut
-        dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
-        Rover.rock_dists = dist
-        Rover.rock_angles = angles
-    else:
-        Rover.seeing_rock = False
-        
-    return Rover
-```
-
 ### Decision processing step
 
 #### Navigation states
@@ -266,8 +11,9 @@ Three states where defined and used to allow different navigation modes:
    to the calculations:
    - Adds a constant bias of `+7` degrees, so that the direction will tend more to the left (left
      wall crawler)
-   - Each pixel's angle is **ponderated by a factor between `[0-1]`**, depending on how well visited
-     is each pixel. Pixels shown with confidence in the minimap, will have this value tending to `0`,
+   - Each pixel's angle is **ponderated by a factor between `[0-1]`** (`Rover.visited_ponderators`)
+     depending on how well visited is each pixel. Pixels shown with confidence in the minimap, will
+     have this value tending to `0`,
      so that they will count only a bit to the mean calculation. Pixels that remain unseen will have
      this value tending to `1`, so that the direction of the car will tend towards them and they
      will more likely become explored.
@@ -563,3 +309,259 @@ tackle them, were:
 
    And there are many more decisions and parameters that need to be optimized and tested, so that's
    an always open path for improvement (or bugs).
+
+### Perception processing step
+
+Only `perception_step` code is included here, not the helper functions and classes (like `RoverCam`) which
+can be seen in the same source code file `perception.py`.
+
+The main features to note in the following `perception_step()` function are:
+ - The `RoverCam` class, which contains some static information about the camera, to avoid
+   recalculating it in each frame. Members of this class are:
+    - `perspect_M`: perspective transform matrix used by OpenCV (only calculated once)
+    - `view_mask`: allows filtering the rover `vision_image` to certain distance range, in which the
+      image is considered valid. Out of that range, image is not considered to make decisions about
+      navigation. The only exception is for the rocks channel, since we want to see rocks from as
+      far away as possible.
+ - `worldmap` only gets updated if `pitch` and `roll` are below certain value
+ - The `vision_image` for navigation angles is showing `visited_ponderators` which is similar to
+   a mask but the value in each point is a fuzzy value in range `[0-1]`, where most visited places
+   (pixels already present in the minimap with high values) tend to 0.
+   This is used in `decision.py` to ponderate the `nav_angles`, so that the resulting mean angle
+   tends to prefer not visited places.
+ - The pixels added to the minimap are even more restricted in distance range, using the
+   `sure_mask`. This is obviously to improve fidelity.
+
+```python
+def perception_step(Rover):
+    # Set camera size (will update transform params only on change)
+    RoverCam.set_img_shape(Rover.img.shape[0], Rover.img.shape[1])
+
+    # Warp camera to map-view
+    warped = perspect_transform(Rover.img, RoverCam.perspective_M)
+
+    # Apply thresholds to detect navigable map and rocks first
+    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150)) * RoverCam.view_mask
+    rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
+    obstacles = np.abs(1 - nav_thres) * RoverCam.view_mask  # opossite to navigable terrain
+
+    # Calculate navigable pixel values in rover-centric coords
+    xpix_rov, ypix_rov = rover_coords(nav_thres)
+    xpix_obs_rov, ypix_obs_rov = rover_coords(obstacles)
+    xpix_rock_rov, ypix_rock_rov = rover_coords(rock_range)
+
+    # Make sure we have some navigable terrain to process
+    if len(xpix_rov) > 1:
+
+        # Navigable pixels distances and angles
+        dist, angles = to_polar_coords(xpix_rov, ypix_rov)
+        Rover.nav_dists = dist
+        Rover.nav_angles = angles
+
+        # Calculate pitch and roll deviations (avoid jump from 0-360)
+        roll_err = np.abs(Rover.roll if Rover.roll < 180 else Rover.roll - 360)
+        pitch_err = np.abs(Rover.pitch if Rover.pitch < 180 else Rover.pitch - 360)
+
+        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
+        scale = 10
+        # Convert from rover-centric to worldmap coords
+        xpix_nav, ypix_nav = pix_to_world(xpix_rov, ypix_rov,
+                                          Rover.pos[0], Rover.pos[1],
+                                          Rover.yaw,
+                                          Rover.worldmap.shape[0],
+                                          scale)
+
+        # Visited places have lesser values [0, 1], this is used to ponderate mean angle
+        Rover.visited_ponderators = (260 - Rover.worldmap[ypix_nav, xpix_nav, 2]) / 260
+
+        # only add points to worldmap when we've small pitch and roll
+        if roll_err < 1.5 and pitch_err < 2.0:
+
+            # how new is this terrain being explored? low pass filter (iir moving avg)
+            Rover.visit_gain = (Rover.visit_gain * 199 + np.mean(Rover.visited_ponderators)) / 200
+
+            # Update minimap only for nearby pixels
+            sure_mask = dist < 30
+            ypix_nav_sure = ypix_nav[sure_mask]
+            xpix_nav_sure = xpix_nav[sure_mask]
+            Rover.worldmap[ypix_nav_sure, xpix_nav_sure, 2] += 10
+
+            # Repeat the transformation to show obstacles on the map
+            xpix_obs, ypix_obs = pix_to_world(xpix_obs_rov, ypix_obs_rov,
+                                                Rover.pos[0], Rover.pos[1],
+                                                Rover.yaw,
+                                                Rover.worldmap.shape[0],
+                                                scale)
+            Rover.worldmap[ypix_obs, xpix_obs, 0] += 1
+            # Remove objects from any navigable zones
+            Rover.worldmap[Rover.worldmap[:, :, 2].nonzero(), 0] = 0
+
+            # Repeat the procedure to show rocks on the map
+            xpix_rock, ypix_rock = pix_to_world(xpix_rock_rov, ypix_rock_rov,
+                                                Rover.pos[0], Rover.pos[1],
+                                                Rover.yaw,
+                                                Rover.worldmap.shape[0],
+                                                scale)
+            Rover.worldmap[ypix_rock, xpix_rock, 1] += 1
+
+            # Clip all channels to [0-255]
+            Rover.worldmap = np.clip(Rover.worldmap, 0, 255)
+
+        Rover.vision_image[:,:,0] = 255 * obstacles
+        # Rover.vision_image[:,:,2] = 255*nav_thres
+        Rover.vision_image[:,:,1] = 255 * rock_range
+
+        # Show the ponderators in the image (dark zones are already visited)
+        ypix_img, xpix_img = nav_thres.nonzero()
+        Rover.vision_image[ypix_img, xpix_img, 2] = 255 * Rover.visited_ponderators
+
+    if len(xpix_obs_rov):
+        dist, angles = to_polar_coords(xpix_obs_rov, ypix_obs_rov)
+        Rover.obs_dists = dist
+        Rover.obs_angles = angles
+
+    if len(xpix_rock_rov):
+        Rover.seeing_rock = True  # shortcut
+        dist, angles = to_polar_coords(xpix_rock_rov, ypix_rock_rov)
+        Rover.rock_dists = dist
+        Rover.rock_angles = angles
+    else:
+        Rover.seeing_rock = False
+        
+    return Rover
+```
+
+## Notebook Analysis
+### Color detection functions
+
+These are the functions that used to identify navigable terrain and rocks.
+For navigable terrain the function `color_thresh()` was used as developed during the course.
+For rock selection, I defined a new function `color_range()` that allows lower and upper thresholds
+for each RGB channel.
+
+```python
+# Select pixels whose RGB values are below each corresponding threshold (used for navigable terrain)
+def color_thresh(img, rgb_thresh=(180, 160, 150)):
+    # Create an array of zeros same xy size as img, but single channel
+    color_select = np.zeros_like(img[:,:,0])
+    # Require that each pixel be above all three threshold values in RGB
+    # above_thresh will now contain a boolean array with "True"
+    # where threshold was met
+    above_thresh = (img[:,:,0] > rgb_thresh[0]) \
+                & (img[:,:,1] > rgb_thresh[1]) \
+                & (img[:,:,2] > rgb_thresh[2])
+    # Index the array of zeros with the boolean array and set to 1
+    color_select[above_thresh] = 1
+    # Return the binary image
+    return color_select
+
+
+# Pick colors which RGB values are all between their given ranges (used for rocks)
+def color_range(img, rgb_range=((150, 170), (150, 170), (150, 170))):
+    # Create an array of zeros same xy size as img, but single channel
+    color_select = np.zeros_like(img[:,:,0])
+    
+    in_range = (img[:,:,0] >= rgb_range[0][0]) & (img[:,:,0] <= rgb_range[0][1])\
+               & (img[:,:,1] >= rgb_range[1][0]) & (img[:,:,1] <= rgb_range[1][1])\
+               & (img[:,:,2] >= rgb_range[2][0]) & (img[:,:,2] <= rgb_range[2][1])
+    # Index the array of zeros with the boolean array and set to 1
+    color_select[in_range] = 1
+    # Return the binary image
+    return color_select
+```
+
+In the image below it can be seen these functions in action for various sample images.
+Note that the rock is detected even when it's very far away, although only one pixel passes through
+the filter.
+
+Also note that next to the rock, the terrain is not identified as navigable. When approaching rocks,
+the navigation mode changes to allow going towards a rock even if it's isolated by non-navigable
+terrain. This change of mode was necessary because otherwise the car would hit walls when no rocks
+were near, or it would never reach rocks that sometimes are located in very tricky places.
+
+![Functions tested with sample images](../w_imgs/ranged_images.png)
+
+### Image processing applied to navigation sequence 
+
+Here is the version of `process_image()` used in the notebook. The version used in `perception.py`
+has some further selection to avoid mapping terrain when the pitch and roll angles are not adequate
+and such.
+
+```python
+def rover_cam_to_map_view_coords(dst_img):
+    # Get source and destination squares to transform image from rover camera
+    # perspective, to a map view perspective.
+    dst_size = 5
+    bottom_offset = 6
+    source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
+    destination = np.float32([
+            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - bottom_offset],
+            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - bottom_offset],
+            [dst_img.shape[1]/2 + dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
+            [dst_img.shape[1]/2 - dst_size, dst_img.shape[0] - 2*dst_size - bottom_offset],
+            ])
+    return source, destination
+
+def process_image(img):
+    # From each img, generate a mosaic with 3 sub-images:
+    #  - copy of input img
+    #  - warped img converted from rover-POV to map-view
+    #  - ground truth map overlayed with navigable map and yellow rocks found
+
+        # Warp camera to map-view
+    source, destination = rover_cam_to_map_view_coords(img)
+    warped = perspect_transform(img, source, destination)
+        # Apply thresholds to detect navigable map and rocks first
+    nav_thres = color_thresh(warped, rgb_thresh=(180, 160, 150))
+    rock_range = color_range(warped, rgb_range=((130, 250), (90, 200), (0, 40)))
+
+        # Calculate navigable pixel values in rover-centric coords
+    xpix_nav, ypix_nav = rover_coords(nav_thres)
+        # world map is 1pix = 1m, our perspect_transform() produces 10pix = 1m
+    scale = 10
+        # Convert from rover-centric to worldmap coords
+    xpix_nav, ypix_nav = pix_to_world(xpix_nav, ypix_nav,
+                                      data.xpos[data.count], data.ypos[data.count],
+                                      data.yaw[data.count],
+                                      data.worldmap.shape[0],
+                                      scale)
+    data.worldmap[ypix_nav, xpix_nav, :] = 50  # paint grey
+
+        # Repeat the procedure to show rocks on the map
+    xpix_rock, ypix_rock = rover_coords(rock_range)
+    xpix_rock, ypix_rock = pix_to_world(xpix_rock, ypix_rock,
+                                        data.xpos[data.count], data.ypos[data.count],
+                                        data.yaw[data.count],
+                                        data.worldmap.shape[0],
+                                        scale)
+    data.worldmap[ypix_rock, xpix_rock] = (255, 0, 0)  # paint red
+
+        # First create a blank image (can be whatever shape you like)
+    output_image = np.zeros((img.shape[0] + data.worldmap.shape[0], img.shape[1]*2, 3))
+    
+        # Top left image: original
+    output_image[0:img.shape[0], 0:img.shape[1]] = img
+    
+        # Top right image: Overlay warped with detected thresholds and rocks
+    # warped_percept = np.zeros_like(warped)
+    # warped_percept[nav_thres] = (0, 255, 255)
+    # warped_percept[rock_range] = (255, 0, 0)
+    # warped = cv2.addWeighted(warped, 1, warped_percept, 1, 0)  # comment this line to avoid overlay
+    output_image[0:img.shape[0], img.shape[1]:] = warped
+
+        # Bottom left: Overlay worldmap with ground truth map
+    map_add = cv2.addWeighted(data.worldmap, 1, data.ground_truth, 0.2, 0)
+        # Flip map overlay so y-axis points upward and add to output_image 
+    output_image[img.shape[0]:, 0:map_add.shape[1]] = np.flipud(map_add)
+    
+        # Bottom right: Unused for now
+
+    data.count += 1 # Keep track of the index in the Databucket()
+    
+    return output_image
+```
+
+The video created after applying this processing to the given sequence of images, is in [this
+file](../output/test_mapping.mp4)
+
+
