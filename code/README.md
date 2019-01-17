@@ -1,5 +1,21 @@
 # Writeup: Search and Sample Return Project
 
+ * [Autonomous Navigation and Mapping](#autonomous-navigation-and-mapping)
+   + [Decision processing step](#decision-processing-step)
+     - [Navigation states](#navigation-states)
+     - [Priority issues](#priority-issues)
+     - [Layers of decision](#layers-of-decision)
+     - [Code for `decision_step()` implementation](#code-for--decision-step----implementation)
+     - [Detecting obstacles](#detecting-obstacles)
+     - [Avoiding obstacles](#avoiding-obstacles)
+     - [Detecting closed corners](#detecting-closed-corners)
+   + [Perception processing step](#perception-processing-step)
+ * [Results obtained with this implementation](#results-obtained-with-this-implementation)
+ * [Notebook Analysis](#notebook-analysis)
+   + [Color detection functions](#color-detection-functions)
+   + [Image processing applied to navigation sequence](#image-processing-applied-to-navigation-sequence)
+
+
 ## Autonomous Navigation and Mapping
 ### Decision processing step
 
@@ -44,7 +60,7 @@ Three states where defined and used to allow different navigation modes:
    ![Home state window](../misc/mode_go_home.png)
 
 
-### Priority issues
+#### Priority issues
 The modes listed above are completely masked if the flag `Rover.near_sample` is set. In that case,
 the rover will just stop and set the `Rover.send_pickup` flag to move the robotic arm and pick the
 rock.
@@ -57,7 +73,7 @@ dissappear from sight, this flag will cause a timeout counter to get restarted
 dissappear but the rover is still looking for it, it will estimate the direction of steering using
 the `Rover.last_seen_rock` angle.
 
-### Layers of decision
+#### Layers of decision
 The rover needs to make the final decision of what throttle and steer to set, based on what
 I identify as different "Layers" because some of them are long term goals (like exploring the map
 preferring the left direction, or going back to the initial position), and other fundamental short
@@ -81,7 +97,7 @@ In the mode `NAV_TO_ROCK`, this order is not exactly met, since `target_speed` i
 directly in the first step, to avoid braking in front of walls when pursuing a rock, as mentioned
 before.
 
-### Code for `decision_step()` implementation
+#### Code for `decision_step()` implementation
 With the general description presented above, the basic logic of the function can be understood.
 There are still several details to cover but they will be described after this section.
 
@@ -143,7 +159,7 @@ def decision_step(Rover):
     return Rover
 ```
 
-### Detecting obstacles
+#### Detecting obstacles
 One of the core functions that allows detection of obstacles and nearby to walls, is the one that
 allows to measure the distance of the nearest object, looking into a given `target_angle`, and with
 a certain angle `span`. The implementation relies on `Rover.obs_angles` which is similar to
@@ -172,7 +188,7 @@ that there's no actual obstacle, but instead some dark noise in the image, like 
 Finally, it averages the distance of the nearest 30 pixels labeled as obstacles, and takes that as
 the distance of the nearest object. This method proved to work quite well in this environment.
 
-### Avoiding obstacles
+#### Avoiding obstacles
 Built upon the previous function, the following function will take a `target_angle` and modify it to
 avoid collisions with objects.
 
@@ -209,7 +225,7 @@ def add_obstacle_avoiding_offset(Rover, target_angle, margin=40):
 Note that the offset is cuadratic with the inverse of the distance, to increase
 sensitivity to nearby objects.
 
-### Detecting closed corners
+#### Detecting closed corners
 Another interesting function implemented is the one that detects when there's no navigable terrain
 ahead, despite not having hit a wall yet. The implementation is quite simple and proved to work
 fine:
@@ -226,89 +242,6 @@ Then it checks if the farthest navigable pixel is before the middle of the maxim
 and if that's the case, we should turn around and go our way back. The `0.5` margin is quite
 arbitrary of course, but using higher values can be risky since we might turn around before being
 sure that there's no way out.
-
-## Results obtained with this implementation
-This implementation is the result of many iterations, and many of the things that were tried are not
-included in the code now. So the final solution is quite stable and with different efficience in
-time, most of the times it collects all the rocks, explores most parts of the map (near `90%`), and
-goes back to the initial point. There are of course many things to improve and implement yet, and
-some issues that appear once in a while.
-
-[Recording of one example successful run](https://youtu.be/E-WrL4jrnQA).
-
-**Note:***the explored pixels turn from blue to black in the top view of the processed camera image,
-that is because they are being multiplied by the `visited_ponderators`, which tend to zero when the
-terrain is already explored (those are used to orient the direction of the car towards unexplored
-areas.)*
-
-Some of the main issues that were found during development, and that most of the work was done to
-tackle them, were:
-
- - **The car sometimes hit obstacle rocks that are not visible from its camera but still block its way:** this
-   problem was tackled with the implementation of the function `unlock_mechanism()`, which has
-   a timeout to detect when the speed is almost null and the car is not steering or picking up
-   a rock. The car will apply a throttle backwards and try to steer until it detects that it moved
-   from the original locked position.
-
-   The problem of hitting rocks that are not visible at the moment of collision, could be avoided by
-   using the obstacles map in the decision process, having something like a path planning
-   algorithm or at least have the minimap into account when applying the rudimentary offsets
-   mechanism.
-
- - **Unexplored areas and inefficient exploration:** Another problem that remains to some extent, is that
-   the map doesn't get `100%` when the rocks are all collected before that happens (which is usual).
-   That is a difficult problem to avoid, but gets worse because the steering direction of the car is
-   probabilistic. In the file `decision.py`, the following lines can be found:
-
-   ```python
-   Rover.steering_dir = get_steering_to(Rover, Rover.last_nav_yaw)\
-                        * np.random.choice(4 * [1] + [-1])
-   ```
-
-   This causes that is that `1/5` of the times, the steering will cause the car to go in the
-   opposite direction with respect to what it had before starting steering. The reason behind this
-   approach, is to avoid deterministic lockings between some tricky pair of corners, where the car
-   would get stuck forever going from one corner to the other, because it always steers in the same
-   direction and hits the other corner.
-
-   But this has an impact in the exploration efficiency, because sometimes the car finds a rock in
-   the middle of the way, and then steers and goes back its way, instead of continuing exploring to
-   the end of the way. Also breaks the logic that going
-   always following left walls it will go around the entire map, but eventually the car will come
-   back to this place.
-
-   This would be relatively easy to improve, by steering the whole circle and then decide which
-   direction has a better exploration gain, by using the `visited_ponderators` for example. These
-   ponderators add some variability to the decision, avoiding most likely the deterministic lock.
-   
-   The exploration of regions that are not near walls, is also a problem when a left wall crawler is
-   implemented. But in this case, the `visited_ponderators` added to the mean angle calculation,
-   solve the problem with great efficiency.
-
-   Another thing that could be implemented, is a navigation based in *points of interest*, being
-   those the coordinates of points in the map that must be visited so that the map is entirely
-   explored, like corners and also rocks (I discovered that the rock coordinates are all visible in
-   the program). The map is always the same, so that approach is feasible and I tried implementing it
-   but found some roadblocks and decided to remove it, also because I wasn't sure that it was
-   a "legal" solution.
-
- - **Approaching rocks is sometimes unnecessarily slow:** Because walls are most of the time stick
-   to walls, approaching them can be very tricky in some cases. If you try the game in "Training
-   mode" you'll see that sometimes the car locks in places that are not apparent obstacles. Due to
-   this, the rock approaching mechanism is quite different from the general navigation rule, and
-   is designed to approach rocks the more perpendicular to walls as possible. Sometimes it isn't
-   necessary, but in general its more robust.
-
- - **Further tweaking of parameters and improvement of the algorithms**: the mechanisms used to
-   avoid obstacles are very sensitive to changes in parameter values. The compromise here is to
-   avoid crashing, but at the same time, go through narrow passages to reach all places in the map.
-   I spent a lot of time testing and adjusting those parameters, and trying different equations to the
-   offset that is added to the steer angle in order to avoid obstacles, which ended up being
-   proportional to the inverse of the distance squared, as can be seen in the
-   `add_obstacle_avoiding_offset()` function mentioned above.
-
-   And there are many more decisions and parameters that need to be optimized and tested, so that's
-   an always open path for improvement (or bugs).
 
 ### Perception processing step
 
@@ -430,6 +363,89 @@ def perception_step(Rover):
         
     return Rover
 ```
+
+## Results obtained with this implementation
+This implementation is the result of many iterations, and many of the things that were tried are not
+included in the code now. So the final solution is quite stable and with different efficience in
+time, most of the times it collects all the rocks, explores most parts of the map (near `90%`), and
+goes back to the initial point. There are of course many things to improve and implement yet, and
+some issues that appear once in a while.
+
+[Recording of one example successful run](https://youtu.be/E-WrL4jrnQA).
+
+**Note:***the explored pixels turn from blue to black in the top view of the processed camera image,
+that is because they are being multiplied by the `visited_ponderators`, which tend to zero when the
+terrain is already explored (those are used to orient the direction of the car towards unexplored
+areas.)*
+
+Some of the main issues that were found during development, and that most of the work was done to
+tackle them, were:
+
+ - **The car sometimes hit obstacle rocks that are not visible from its camera but still block its way:** this
+   problem was tackled with the implementation of the function `unlock_mechanism()`, which has
+   a timeout to detect when the speed is almost null and the car is not steering or picking up
+   a rock. The car will apply a throttle backwards and try to steer until it detects that it moved
+   from the original locked position.
+
+   The problem of hitting rocks that are not visible at the moment of collision, could be avoided by
+   using the obstacles map in the decision process, having something like a path planning
+   algorithm or at least have the minimap into account when applying the rudimentary offsets
+   mechanism.
+
+ - **Unexplored areas and inefficient exploration:** Another problem that remains to some extent, is that
+   the map doesn't get `100%` when the rocks are all collected before that happens (which is usual).
+   That is a difficult problem to avoid, but gets worse because the steering direction of the car is
+   probabilistic. In the file `decision.py`, the following lines can be found:
+
+   ```python
+   Rover.steering_dir = get_steering_to(Rover, Rover.last_nav_yaw)\
+                        * np.random.choice(4 * [1] + [-1])
+   ```
+
+   This causes that is that `1/5` of the times, the steering will cause the car to go in the
+   opposite direction with respect to what it had before starting steering. The reason behind this
+   approach, is to avoid deterministic lockings between some tricky pair of corners, where the car
+   would get stuck forever going from one corner to the other, because it always steers in the same
+   direction and hits the other corner.
+
+   But this has an impact in the exploration efficiency, because sometimes the car finds a rock in
+   the middle of the way, and then steers and goes back its way, instead of continuing exploring to
+   the end of the way. Also breaks the logic that going
+   always following left walls it will go around the entire map, but eventually the car will come
+   back to this place.
+
+   This would be relatively easy to improve, by steering the whole circle and then decide which
+   direction has a better exploration gain, by using the `visited_ponderators` for example. These
+   ponderators add some variability to the decision, avoiding most likely the deterministic lock.
+   
+   The exploration of regions that are not near walls, is also a problem when a left wall crawler is
+   implemented. But in this case, the `visited_ponderators` added to the mean angle calculation,
+   solve the problem with great efficiency.
+
+   Another thing that could be implemented, is a navigation based in *points of interest*, being
+   those the coordinates of points in the map that must be visited so that the map is entirely
+   explored, like corners and also rocks (I discovered that the rock coordinates are all visible in
+   the program). The map is always the same, so that approach is feasible and I tried implementing it
+   but found some roadblocks and decided to remove it, also because I wasn't sure that it was
+   a "legal" solution.
+
+ - **Approaching rocks is sometimes unnecessarily slow:** Because walls are most of the time stick
+   to walls, approaching them can be very tricky in some cases. If you try the game in "Training
+   mode" you'll see that sometimes the car locks in places that are not apparent obstacles. Due to
+   this, the rock approaching mechanism is quite different from the general navigation rule, and
+   is designed to approach rocks the more perpendicular to walls as possible. Sometimes it isn't
+   necessary, but in general its more robust.
+
+ - **Further tweaking of parameters and improvement of the algorithms**: the mechanisms used to
+   avoid obstacles are very sensitive to changes in parameter values. The compromise here is to
+   avoid crashing, but at the same time, go through narrow passages to reach all places in the map.
+   I spent a lot of time testing and adjusting those parameters, and trying different equations to the
+   offset that is added to the steer angle in order to avoid obstacles, which ended up being
+   proportional to the inverse of the distance squared, as can be seen in the
+   `add_obstacle_avoiding_offset()` function mentioned above.
+
+   And there are many more decisions and parameters that need to be optimized and tested, so that's
+   an always open path for improvement (or bugs).
 
 ## Notebook Analysis
 ### Color detection functions
