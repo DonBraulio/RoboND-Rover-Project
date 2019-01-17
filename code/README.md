@@ -28,8 +28,9 @@ Three states where defined and used to allow different navigation modes:
    - Adds a constant bias of `+7` degrees, so that the direction will tend more to the left (left
      wall crawler)
    - Each pixel's angle is **ponderated by a factor between `[0-1]`** (`Rover.visited_ponderators`)
-     depending on how well visited is each pixel. Pixels shown with confidence in the minimap, will
-     have this value tending to `0`,
+     depending on how well visited is each pixel (for details, see
+     [`perception_step()`](#perception-processing-step)). Pixels shown with confidence in the
+     minimap, will have this value tending to `0`,
      so that they will count only a bit to the mean calculation. Pixels that remain unseen will have
      this value tending to `1`, so that the direction of the car will tend towards them and they
      will more likely become explored.
